@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { doc, onSnapshot, collection, query, orderBy, getDocs, where } from 'firebase/firestore';
-import { db } from '../firebase';
+import { auth, googleProvider, db } from '../firebase';
+import { signInWithPopup } from 'firebase/auth';
 import { Series, Chapter, Comment } from '../types';
 import { Star, Eye, Clock, List, MessageSquare, Heart, Share2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
@@ -15,6 +16,15 @@ export const SeriesDetail: React.FC = () => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'chapters' | 'comments'>('chapters');
+
+  const handleLogin = async () => {
+    try {
+      await signInWithPopup(auth, googleProvider);
+    } catch (error: any) {
+      console.error("Login failed:", error);
+      alert("Login failed: " + error.message);
+    }
+  };
 
   useEffect(() => {
     if (!slug) return;
@@ -174,8 +184,14 @@ export const SeriesDetail: React.FC = () => {
                     </div>
                   </div>
                 ) : (
-                  <div className="p-8 bg-zinc-900/50 border border-dashed border-white/10 rounded-2xl text-center">
+                  <div className="p-8 bg-zinc-900/50 border border-dashed border-white/10 rounded-2xl text-center space-y-4">
                     <p className="text-zinc-500 font-bold">Please login to join the discussion</p>
+                    <button 
+                      onClick={handleLogin}
+                      className="px-8 py-2 bg-white text-black font-bold rounded-full text-sm hover:bg-zinc-200 transition-colors"
+                    >
+                      Login with Google
+                    </button>
                   </div>
                 )}
 

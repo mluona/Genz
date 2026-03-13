@@ -69,11 +69,11 @@ service cloud.firestore {
     // ===============================================================
 
     match /series/{seriesId} {
-      allow read: if isAuthenticated();
+      allow read: if true;
       allow create, update, delete: if isAdmin() && isValidSeries(request.resource.data);
 
       match /chapters/{chapterId} {
-        allow read: if isAuthenticated();
+        allow read: if true;
         allow create, update, delete: if isAdmin() && isValidChapter(request.resource.data);
       }
     }

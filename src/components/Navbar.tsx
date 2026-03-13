@@ -11,11 +11,21 @@ export const Navbar: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
 
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   const handleLogin = async () => {
+    setLoginError(null);
     try {
       await signInWithPopup(auth, googleProvider);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Login failed:", error);
+      if (error.code === 'auth/popup-blocked') {
+        setLoginError("Please allow popups for this site to login with Google.");
+      } else if (error.code === 'auth/cancelled-popup-request') {
+        // Ignore
+      } else {
+        setLoginError("Login failed: " + error.message);
+      }
     }
   };
 
@@ -29,6 +39,12 @@ export const Navbar: React.FC = () => {
 
   return (
     <nav className="sticky top-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-white/5">
+      {loginError && (
+        <div className="bg-red-500 text-white text-xs font-bold py-2 px-4 text-center">
+          {loginError}
+          <button onClick={() => setLoginError(null)} className="ml-4 underline">Dismiss</button>
+        </div>
+      )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           {/* Logo */}
@@ -63,8 +79,9 @@ export const Navbar: React.FC = () => {
                   <Bell className="w-5 h-5" />
                 </Link>
                 {isAdmin && (
-                  <Link to="/admin" className="p-2 text-zinc-400 hover:text-white transition-colors" title="Admin Dashboard">
-                    <LayoutDashboard className="w-5 h-5" />
+                  <Link to="/admin" className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-full transition-colors" title="Admin Dashboard">
+                    <LayoutDashboard className="w-4 h-4" />
+                    <span className="text-xs font-bold uppercase tracking-widest">Admin</span>
                   </Link>
                 )}
                 <Link to="/profile" className="flex items-center gap-2">
@@ -113,6 +130,16 @@ export const Navbar: React.FC = () => {
             <Link to="/manhwa" onClick={() => setIsMenuOpen(false)} className="text-center py-2 bg-zinc-800 rounded-lg text-sm font-medium">Manhwa</Link>
             <Link to="/novels" onClick={() => setIsMenuOpen(false)} className="text-center py-2 bg-zinc-800 rounded-lg text-sm font-medium">Novels</Link>
           </div>
+          {isAdmin && (
+            <Link 
+              to="/admin" 
+              onClick={() => setIsMenuOpen(false)}
+              className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-500 text-black font-bold rounded-xl"
+            >
+              <LayoutDashboard className="w-5 h-5" />
+              Admin Dashboard
+            </Link>
+          )}
           {!user && (
             <button
               onClick={handleLogin}

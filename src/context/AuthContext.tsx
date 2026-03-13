@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { onAuthStateChanged, User } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot, setDoc, getDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from '../firebase';
 import { UserProfile } from '../types';
 
@@ -26,10 +26,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
       setUser(firebaseUser);
-      if (!firebaseUser) {
+      
+      if (firebaseUser) {
+        // Check if profile exists, if not create it
+        const userDocRef = doc(db, 'users', firebaseUser.uid);
+        const userDoc = await getDoc(userDocRef);
+        
+        if (!userDoc.exists()) {
+          const newProfile: UserProfile = {
+            uid: firebaseUser.uid,
+            username: firebaseUser.displayName || firebaseUser.email?.split('@')[0] || 'User',
+            email: firebaseUser.email || '',
+            bio: 'Reading is life.',
+            profilePicture: firebaseUser.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${firebaseUser.uid}`,
+            role: firebaseUser.email === 'aynmluona@gmail.com' ? 'admin' : 'user',
+            favorites: [],
+            history: [],
+            bookmarks: [],
+            banned: false,
+          };
+          await setDoc(userDocRef, newProfile);
+          setProfile(newProfile);
+        }
+      } else {
         setProfile(null);
+      }
+      
+      if (!firebaseUser) {
         setLoading(false);
       }
     });
@@ -53,7 +78,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => unsubscribeProfile();
   }, [user]);
 
-  const isAdmin = profile?.role === 'admin' || user?.email === 'aynmluona@gmail.com';
+  const isAdmin = profile?.role === 'admin' || user?.email?.toLowerCase() === 'aynmluona@gmail.com';
 
   return (
     <AuthContext.Provider value={{ user, profile, loading, isAdmin }}>

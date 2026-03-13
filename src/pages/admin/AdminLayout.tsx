@@ -23,10 +23,18 @@ import { signOut } from 'firebase/auth';
 import { auth } from '../../firebase';
 
 export const AdminLayout: React.FC = () => {
-  const { profile, isAdmin } = useAuth();
+  const { profile, isAdmin, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-950 text-white">
+        <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
