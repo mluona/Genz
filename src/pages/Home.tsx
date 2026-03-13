@@ -77,7 +77,7 @@ export const Home: React.FC = () => {
             <span className="px-3 py-1 bg-emerald-500 text-black text-xs font-black rounded-md uppercase tracking-widest mb-4 inline-block">
               Featured Today
             </span>
-            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-4 max-w-2xl leading-[0.9]">
+            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-4 max-w-2xl leading-[1.1] sm:leading-[0.9]">
               EXPLORE THE WORLD OF GENZ
             </h1>
             <p className="text-zinc-400 text-lg max-w-xl mb-8 font-medium">

@@ -1,15 +1,53 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle } from 'lucide-react';
+import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle, X } from 'lucide-react';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, Timestamp, query, orderBy } from 'firebase/firestore';
+import { db } from '../../firebase';
 import axios from 'axios';
 
 export const AutoImport: React.FC = () => {
-  const [sources, setSources] = useState([
-    { id: '1', name: 'MangaSource RSS', url: 'https://rss.app/feeds/v1/manga', type: 'RSS', status: 'Active', lastSync: '2 hours ago' },
-  ]);
+  const [sources, setSources] = useState<any[]>([]);
   const [isImporting, setIsImporting] = useState(false);
   const [importLog, setImportLog] = useState<string[]>([]);
   const [rssItems, setRssItems] = useState<any[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newSource, setNewSource] = useState({
+    name: '',
+    url: '',
+    type: 'RSS' as 'RSS' | 'API',
+  });
+
+  useEffect(() => {
+    const q = query(collection(db, 'import_sources'), orderBy('createdAt', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      setSources(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleAddSource = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'import_sources'), {
+        ...newSource,
+        status: 'Active',
+        lastSync: 'Never',
+        createdAt: Timestamp.now(),
+      });
+      setIsModalOpen(false);
+      setNewSource({ name: '', url: '', type: 'RSS' });
+    } catch (error) {
+      console.error("Error adding source:", error);
+    }
+  };
+
+  const handleDeleteSource = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'import_sources', id));
+    } catch (error) {
+      console.error("Error deleting source:", error);
+    }
+  };
 
   const handleRunImport = async (sourceId: string) => {
     const source = sources.find(s => s.id === sourceId);
@@ -47,7 +85,10 @@ export const AutoImport: React.FC = () => {
           <h1 className="text-3xl font-black tracking-tight">Auto Import System</h1>
           <p className="text-zinc-500 font-medium">Connect external sources to automatically import new chapters.</p>
         </div>
-        <button className="flex items-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors">
+        <button 
+          onClick={() => setIsModalOpen(true)}
+          className="flex items-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
+        >
           <Plus className="w-5 h-5" /> Add New Source
         </button>
       </div>
@@ -86,7 +127,10 @@ export const AutoImport: React.FC = () => {
                       >
                         <Play className="w-5 h-5 fill-current" />
                       </button>
-                      <button className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors">
+                      <button 
+                        onClick={() => handleDeleteSource(source.id)}
+                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                      >
                         <Trash2 className="w-5 h-5" />
                       </button>
                     </div>
@@ -173,6 +217,70 @@ export const AutoImport: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Add Source Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-2xl font-black uppercase tracking-tight">Add Source</h2>
+              <button onClick={() => setIsModalOpen(false)} className="p-2 text-zinc-400 hover:bg-zinc-100 rounded-full">
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+            <form onSubmit={handleAddSource} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Source Name</label>
+                <input 
+                  type="text" 
+                  required
+                  value={newSource.name}
+                  onChange={e => setNewSource({...newSource, name: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  placeholder="e.g. MangaSource RSS"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Source URL</label>
+                <input 
+                  type="url" 
+                  required
+                  value={newSource.url}
+                  onChange={e => setNewSource({...newSource, url: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  placeholder="https://example.com/rss"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Type</label>
+                <select 
+                  value={newSource.type}
+                  onChange={e => setNewSource({...newSource, type: e.target.value as 'RSS' | 'API'})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
+                >
+                  <option value="RSS">RSS Feed</option>
+                  <option value="API">API Endpoint</option>
+                </select>
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button 
+                  type="button" 
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-3 text-zinc-500 font-bold hover:bg-zinc-100 rounded-xl transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  className="flex-1 py-3 bg-black text-white font-bold rounded-xl hover:bg-zinc-800 transition-colors"
+                >
+                  Add Source
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

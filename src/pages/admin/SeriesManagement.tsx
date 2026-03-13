@@ -8,6 +8,8 @@ export const SeriesManagement: React.FC = () => {
   const [seriesList, setSeriesList] = useState<Series[]>([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSeries, setEditingSeries] = useState<Series | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [seriesToDelete, setSeriesToDelete] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -76,8 +78,19 @@ export const SeriesManagement: React.FC = () => {
   };
 
   const handleDelete = async (id: string) => {
-    if (confirm("Are you sure you want to delete this series?")) {
-      await deleteDoc(doc(db, 'series', id));
+    setSeriesToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (seriesToDelete) {
+      try {
+        await deleteDoc(doc(db, 'series', seriesToDelete));
+        setIsDeleteModalOpen(false);
+        setSeriesToDelete(null);
+      } catch (error) {
+        console.error("Error deleting series:", error);
+      }
     }
   };
 
@@ -307,6 +320,35 @@ export const SeriesManagement: React.FC = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-8 space-y-6">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black uppercase tracking-tight">Delete Series?</h3>
+              <p className="text-zinc-500 font-medium">This action cannot be undone. All chapters and data associated with this series will be lost.</p>
+            </div>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="flex-1 py-3 bg-zinc-100 text-zinc-500 font-bold rounded-xl hover:bg-zinc-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
           </div>
         </div>
       )}
