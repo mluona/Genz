@@ -1,0 +1,116 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: series
+    // Fields: title, description, coverImage, status, type, genres, tags, author, artist, releaseYear, rating, ratingCount, views, lastUpdated, slug
+    //
+    // Collection: series/{seriesId}/chapters
+    // Fields: seriesId, chapterNumber, title, content, publishDate, views, teamId
+    //
+    // Collection: users
+    // Fields: uid, username, email, bio, profilePicture, role, favorites, history, bookmarks, banned
+    //
+    // Collection: comments
+    // Fields: seriesId, chapterId, userId, username, userAvatar, text, likes, parentId, timestamp
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() &&
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+          (request.auth.token.email == "aynmluona@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasOnly(['uid', 'username', 'email', 'bio', 'profilePicture', 'role', 'favorites', 'history', 'bookmarks', 'banned']) &&
+             data.uid is string && data.username is string && data.username.size() > 0 && data.username.size() < 50 &&
+             data.role in ['user', 'admin', 'translator', 'proofreader', 'typesetter', 'editor'];
+    }
+
+    function isValidSeries(data) {
+      return data.keys().hasAll(['title', 'type', 'status', 'slug']) &&
+             data.title is string && data.title.size() > 0 && data.title.size() < 200 &&
+             data.type in ['Manga', 'Manhwa', 'Novel'] &&
+             data.status in ['Ongoing', 'Completed', 'Hiatus', 'Dropped'] &&
+             data.slug is string;
+    }
+
+    function isValidChapter(data) {
+      return data.keys().hasAll(['seriesId', 'chapterNumber', 'publishDate']) &&
+             data.seriesId is string &&
+             data.chapterNumber is number &&
+             data.publishDate is timestamp;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['seriesId', 'userId', 'text', 'timestamp']) &&
+             data.text is string && data.text.size() > 0 && data.text.size() < 1000 &&
+             data.userId == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /series/{seriesId} {
+      allow read: if isAuthenticated();
+      allow create, update, delete: if isAdmin() && isValidSeries(request.resource.data);
+
+      match /chapters/{chapterId} {
+        allow read: if isAuthenticated();
+        allow create, update, delete: if isAdmin() && isValidChapter(request.resource.data);
+      }
+    }
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'user' || isAdmin());
+      allow update: if isAuthenticated() && (isOwner(userId) || isAdmin()) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+      allow delete: if isAdmin();
+    }
+
+    match /comments/{commentId} {
+      allow read: if isAuthenticated();
+      allow create: if isAuthenticated() && isValidComment(request.resource.data);
+      allow update: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin()) && isValidComment(request.resource.data);
+      allow delete: if isAuthenticated() && (isOwner(resource.data.userId) || isAdmin());
+    }
+
+    match /analytics/{docId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /teams/{teamId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /pages/{pageId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated(); // Systems or other users can create notifications
+      allow update: if isAuthenticated() && resource.data.userId == request.auth.uid && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow delete: if isAuthenticated() && resource.data.userId == request.auth.uid;
+    }
+  }
+}
