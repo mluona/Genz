@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { AuthProvider } from './context/AuthContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Navbar } from './components/Navbar';
+import { BottomNav } from './components/BottomNav';
 import { Home } from './pages/Home';
 import { SeriesDetail } from './pages/SeriesDetail';
 import { Reader } from './pages/Reader';
@@ -52,6 +53,7 @@ export default function App() {
                       <Route path="/search" element={<div className="p-20 text-center">Search Results Page</div>} />
                       <Route path="*" element={<Navigate to="/" replace />} />
                     </Routes>
+                    <BottomNav />
                   </>
                 }
               />

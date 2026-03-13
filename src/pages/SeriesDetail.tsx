@@ -86,7 +86,7 @@ export const SeriesDetail: React.FC = () => {
                 <span className="px-3 py-1 bg-emerald-500 text-black text-[10px] font-black rounded-md uppercase tracking-widest">{series.type}</span>
                 <span className="px-3 py-1 bg-white/10 text-white text-[10px] font-black rounded-md uppercase tracking-widest">{series.status}</span>
               </div>
-              <h1 className="text-4xl sm:text-6xl font-black tracking-tighter leading-none">{series.title}</h1>
+              <h1 className="text-4xl sm:text-6xl font-black tracking-tighter leading-[1.2] sm:leading-[1.1]">{series.title}</h1>
               <div className="flex flex-wrap items-center justify-center sm:justify-start gap-6 text-sm font-bold text-zinc-400">
                 <div className="flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500 fill-current" /> {series.rating.toFixed(1)} ({series.ratingCount})</div>
                 <div className="flex items-center gap-2"><Eye className="w-4 h-4" /> {series.views.toLocaleString()}</div>

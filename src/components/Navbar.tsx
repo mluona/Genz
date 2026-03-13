@@ -63,42 +63,41 @@ export const Navbar: React.FC = () => {
 
           {/* Search & User */}
           <div className="hidden md:flex items-center gap-4">
-            <form onSubmit={handleSearch} className="relative">
+            <form onSubmit={handleSearch} className="relative group">
               <input
                 type="text"
                 placeholder="Search series..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 bg-zinc-900 border border-white/10 rounded-full py-1.5 pl-10 pr-4 text-sm focus:outline-none focus:border-emerald-500/50 transition-colors"
+                className="w-64 bg-zinc-900/50 border border-white/5 rounded-full py-2 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-zinc-900 transition-all"
               />
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-emerald-500 transition-colors" />
             </form>
 
             {user ? (
-              <div className="flex items-center gap-4">
-                <Link to="/notifications" className="p-2 text-zinc-400 hover:text-white transition-colors">
+              <div className="flex items-center gap-2">
+                <Link to="/notifications" className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-all">
                   <Bell className="w-5 h-5" />
                 </Link>
                 {isAdmin && (
-                  <Link to="/admin" className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-full transition-colors" title="Admin Dashboard">
+                  <Link to="/admin" className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-full transition-all" title="Admin Dashboard">
                     <LayoutDashboard className="w-4 h-4" />
-                    <span className="text-xs font-bold uppercase tracking-widest">Admin</span>
+                    <span className="text-[10px] font-black uppercase tracking-widest">Admin</span>
                   </Link>
                 )}
-                <Link to="/profile" className="flex items-center gap-2">
+                <Link to="/profile" className="ml-2">
                   <img
                     src={profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
                     alt="Profile"
-                    className="w-8 h-8 rounded-full border border-white/10"
+                    className="w-9 h-9 rounded-full border-2 border-white/5 hover:border-emerald-500/50 transition-all"
                   />
                 </Link>
               </div>
             ) : (
               <button
                 onClick={handleLogin}
-                className="flex items-center gap-2 px-4 py-1.5 bg-white text-black text-sm font-bold rounded-full hover:bg-zinc-200 transition-colors"
+                className="m3-button-primary"
               >
-                <LogIn className="w-4 h-4" />
                 Login
               </button>
             )}

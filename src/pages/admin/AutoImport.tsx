@@ -14,7 +14,6 @@ export const AutoImport: React.FC = () => {
   const [newSource, setNewSource] = useState({
     name: '',
     url: '',
-    type: 'RSS' as 'RSS' | 'API',
   });
 
   useEffect(() => {
@@ -30,12 +29,13 @@ export const AutoImport: React.FC = () => {
     try {
       await addDoc(collection(db, 'import_sources'), {
         ...newSource,
+        type: 'Website',
         status: 'Active',
         lastSync: 'Never',
         createdAt: Timestamp.now(),
       });
       setIsModalOpen(false);
-      setNewSource({ name: '', url: '', type: 'RSS' });
+      setNewSource({ name: '', url: '' });
     } catch (error) {
       console.error("Error adding source:", error);
     }
@@ -54,25 +54,24 @@ export const AutoImport: React.FC = () => {
     if (!source) return;
 
     setIsImporting(true);
-    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting import from ${source.name}...`]);
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Scanning website: ${source.name}...`]);
     
     try {
-      const response = await fetch(`/api/import/rss?url=${encodeURIComponent(source.url)}`);
-      const xmlText = await response.text();
+      const response = await fetch(`/api/scrape/images?url=${encodeURIComponent(source.url)}`);
+      const data = await response.json();
       
-      // Simple XML parsing for RSS
-      const parser = new DOMParser();
-      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-      const items = Array.from(xmlDoc.querySelectorAll("item")).map(item => ({
-        title: item.querySelector("title")?.textContent,
-        link: item.querySelector("link")?.textContent,
-        pubDate: item.querySelector("pubDate")?.textContent,
-      }));
+      if (data.images) {
+        const items = data.images.slice(0, 20).map((img: string, i: number) => ({
+          title: `Image ${i + 1}`,
+          link: img,
+          pubDate: new Date().toISOString(),
+        }));
 
-      setRssItems(items);
-      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${items.length} items in feed.`]);
+        setRssItems(items);
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${data.images.length} images on page.`]);
+      }
     } catch (error) {
-      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to fetch RSS feed.`]);
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to scan website.`]);
     } finally {
       setIsImporting(false);
     }
@@ -237,30 +236,19 @@ export const AutoImport: React.FC = () => {
                   value={newSource.name}
                   onChange={e => setNewSource({...newSource, name: e.target.value})}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="e.g. MangaSource RSS"
+                  placeholder="e.g. Manga Website"
                 />
               </div>
               <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Source URL</label>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Website URL</label>
                 <input 
                   type="url" 
                   required
                   value={newSource.url}
                   onChange={e => setNewSource({...newSource, url: e.target.value})}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="https://example.com/rss"
+                  placeholder="https://example.com/chapter-1"
                 />
-              </div>
-              <div>
-                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Type</label>
-                <select 
-                  value={newSource.type}
-                  onChange={e => setNewSource({...newSource, type: e.target.value as 'RSS' | 'API'})}
-                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                >
-                  <option value="RSS">RSS Feed</option>
-                  <option value="API">API Endpoint</option>
-                </select>
               </div>
               <div className="flex gap-4 pt-4">
                 <button 

@@ -77,17 +77,17 @@ export const Home: React.FC = () => {
             <span className="px-3 py-1 bg-emerald-500 text-black text-xs font-black rounded-md uppercase tracking-widest mb-4 inline-block">
               Featured Today
             </span>
-            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-4 max-w-2xl leading-[1.1] sm:leading-[0.9]">
+            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-4 max-w-2xl leading-[1.15] sm:leading-[1.05]">
               EXPLORE THE WORLD OF GENZ
             </h1>
             <p className="text-zinc-400 text-lg max-w-xl mb-8 font-medium">
               Dive into thousands of manga, manhwa, and novels. Updated daily with the latest chapters from your favorite creators.
             </p>
-            <div className="flex gap-4">
-              <button className="px-8 py-3 bg-white text-black font-bold rounded-full hover:bg-zinc-200 transition-colors">
-                Start Reading
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button className="m3-button-primary flex items-center justify-center gap-2">
+                <Zap className="w-5 h-5" /> Start Reading
               </button>
-              <button className="px-8 py-3 bg-zinc-900 text-white font-bold rounded-full border border-white/10 hover:bg-zinc-800 transition-colors">
+              <button className="m3-button-secondary">
                 Browse All
               </button>
             </div>

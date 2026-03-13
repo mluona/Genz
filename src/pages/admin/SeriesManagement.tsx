@@ -84,12 +84,15 @@ export const SeriesManagement: React.FC = () => {
 
   const confirmDelete = async () => {
     if (seriesToDelete) {
+      console.log("Attempting to delete series with ID:", seriesToDelete);
       try {
         await deleteDoc(doc(db, 'series', seriesToDelete));
+        console.log("Successfully deleted series:", seriesToDelete);
         setIsDeleteModalOpen(false);
         setSeriesToDelete(null);
       } catch (error) {
         console.error("Error deleting series:", error);
+        alert("Failed to delete series. Please check your console for details.");
       }
     }
   };

@@ -7,23 +7,34 @@
 
 @layer base {
   body {
-    @apply bg-zinc-950 text-zinc-100 antialiased;
+    @apply bg-zinc-950 text-zinc-100 antialiased selection:bg-emerald-500/30;
+    /* Android-style line height for better readability */
+    line-height: 1.6;
   }
 
   h1, h2, h3, h4, h5, h6 {
-    @apply font-display tracking-tighter;
+    @apply font-display tracking-tight leading-[1.2] sm:leading-[1.1];
+  }
+
+  /* Fix for "interconnected" text on mobile */
+  p, span, div {
+    @apply leading-relaxed;
   }
 }
 
 @layer components {
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
+  /* Material 3 style cards */
+  .m3-card {
+    @apply bg-zinc-900/50 border border-white/5 rounded-[2rem] p-6 backdrop-blur-md;
   }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    @apply bg-transparent;
+
+  /* Material 3 style buttons */
+  .m3-button-primary {
+    @apply px-6 py-3 bg-emerald-500 text-black font-black rounded-full hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 shadow-lg shadow-emerald-500/20;
   }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    @apply bg-zinc-800 rounded-full hover:bg-zinc-700 transition-colors;
+
+  .m3-button-secondary {
+    @apply px-6 py-3 bg-zinc-800 text-white font-bold rounded-full hover:bg-zinc-700 active:scale-[0.98] transition-all duration-200;
   }
 }
 
