@@ -4,6 +4,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import axios from "axios";
 import dotenv from "dotenv";
+import * as cheerio from "cheerio";
 
 dotenv.config();
 
@@ -30,6 +31,42 @@ async function startServer() {
       res.send(response.data);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch RSS" });
+    }
+  });
+
+  app.get("/api/scrape/images", async (req, res) => {
+    const { url } = req.query;
+    if (!url) return res.status(400).json({ error: "URL is required" });
+
+    try {
+      const response = await axios.get(url as string, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+      });
+      const $ = cheerio.load(response.data);
+      const images: string[] = [];
+
+      $('img').each((i, el) => {
+        const src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-lazy-src');
+        if (src) {
+          // Resolve relative URLs
+          try {
+            const absoluteUrl = new URL(src, url as string).href;
+            if (absoluteUrl.match(/\.(jpg|jpeg|png|webp|gif|avif)/i) || absoluteUrl.includes('googleusercontent')) {
+              images.push(absoluteUrl);
+            }
+          } catch (e) {
+            // Skip invalid URLs
+          }
+        }
+      });
+
+      // Filter out small icons/avatars if possible, or just return all
+      res.json({ images: [...new Set(images)] });
+    } catch (error) {
+      console.error("Scraping failed:", error);
+      res.status(500).json({ error: "Failed to scrape images" });
     }
   });
 

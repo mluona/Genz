@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Series, Chapter } from '../../types';
 import { Plus, Edit2, Trash2, X, Upload, Image as ImageIcon, ArrowRight, Layers } from 'lucide-react';
 
 export const ChapterManagement: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [seriesList, setSeriesList] = useState<Series[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -36,6 +38,58 @@ export const ChapterManagement: React.FC = () => {
     });
     return () => unsubscribe();
   }, [selectedSeries]);
+
+  const [bulkText, setBulkText] = useState('');
+  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
+  const [scrapeUrl, setScrapeUrl] = useState(searchParams.get('scrapeUrl') || '');
+  const [isScraping, setIsScraping] = useState(false);
+
+  useEffect(() => {
+    if (searchParams.get('scrapeUrl')) {
+      setIsModalOpen(true);
+    }
+  }, [searchParams]);
+
+  const handleScrape = async () => {
+    if (!scrapeUrl) return;
+    setIsScraping(true);
+    try {
+      const response = await fetch(`/api/scrape/images?url=${encodeURIComponent(scrapeUrl)}`);
+      const data = await response.json();
+      if (data.images) {
+        setFormData({ ...formData, content: [...formData.content, ...data.images] });
+        setScrapeUrl('');
+      }
+    } catch (error) {
+      console.error("Scraping failed:", error);
+    } finally {
+      setIsScraping(false);
+    }
+  };
+
+  const handleBulkAdd = () => {
+    const urls = bulkText.split('\n').map(url => url.trim()).filter(url => url !== '');
+    setFormData({ ...formData, content: [...formData.content, ...urls] });
+    setBulkText('');
+    setIsBulkModalOpen(false);
+  };
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    const newPages: string[] = [];
+
+    for (const file of files) {
+      const reader = new FileReader();
+      const promise = new Promise<string>((resolve) => {
+        reader.onloadend = () => resolve(reader.result as string);
+      });
+      reader.readAsDataURL(file);
+      const base64 = await promise;
+      newPages.push(base64);
+    }
+
+    setFormData({ ...formData, content: [...formData.content, ...newPages] });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -231,29 +285,73 @@ export const ChapterManagement: React.FC = () => {
                   </div>
                 </div>
                 <div className="md:col-span-2 space-y-6">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Chapter Content (Image URLs)</label>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Chapter Content (Pages)</label>
+                    <div className="flex flex-wrap gap-4">
+                      <label className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline cursor-pointer">
+                        <Upload className="w-3 h-3" /> Upload Files
+                        <input 
+                          type="file" 
+                          multiple 
+                          accept="image/*" 
+                          className="hidden" 
+                          onChange={handleFileUpload}
+                        />
+                      </label>
+                      <button 
+                        type="button"
+                        onClick={() => setIsBulkModalOpen(true)}
+                        className="text-xs font-bold text-purple-600 flex items-center gap-1 hover:underline"
+                      >
+                        <Layers className="w-3 h-3" /> Bulk Add URLs
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={handleAddImage}
+                        className="text-xs font-bold text-emerald-600 flex items-center gap-1 hover:underline"
+                      >
+                        <Plus className="w-3 h-3" /> Add Page
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Scrape Input */}
+                  <div className="flex gap-2">
+                    <input 
+                      type="text"
+                      placeholder="Paste chapter URL to scrape images..."
+                      value={scrapeUrl}
+                      onChange={e => setScrapeUrl(e.target.value)}
+                      className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-emerald-500/50"
+                    />
                     <button 
                       type="button"
-                      onClick={handleAddImage}
-                      className="text-xs font-bold text-emerald-600 flex items-center gap-1 hover:underline"
+                      onClick={handleScrape}
+                      disabled={isScraping || !scrapeUrl}
+                      className="px-4 py-2 bg-zinc-900 text-white text-xs font-bold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
                     >
-                      <Plus className="w-3 h-3" /> Add Page
+                      {isScraping ? 'Scraping...' : 'Scrape'}
                     </button>
                   </div>
+
                   <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
                     {formData.content.map((url, index) => (
-                      <div key={index} className="flex gap-2">
+                      <div key={index} className="flex gap-2 group">
                         <div className="w-8 h-10 bg-zinc-100 rounded flex items-center justify-center text-[10px] font-bold text-zinc-400 flex-shrink-0">
                           {index + 1}
                         </div>
-                        <input 
-                          type="text" 
-                          placeholder="Image URL"
-                          value={url}
-                          onChange={e => handleImageChange(index, e.target.value)}
-                          className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm outline-none"
-                        />
+                        <div className="flex-1 relative">
+                          <input 
+                            type="text" 
+                            placeholder="Image URL or Base64"
+                            value={url}
+                            onChange={e => handleImageChange(index, e.target.value)}
+                            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm outline-none"
+                          />
+                          {url.startsWith('data:image') && (
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-blue-100 text-blue-600 text-[8px] font-black uppercase rounded">File</span>
+                          )}
+                        </div>
                         <button 
                           type="button"
                           onClick={() => handleRemoveImage(index)}
@@ -272,6 +370,41 @@ export const ChapterManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
+
+              {/* Bulk Add Modal */}
+              {isBulkModalOpen && (
+                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                  <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-8 space-y-6">
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">Bulk Add URLs</h3>
+                      <p className="text-xs text-zinc-500 font-medium">Paste image URLs separated by new lines.</p>
+                    </div>
+                    <textarea 
+                      rows={10}
+                      value={bulkText}
+                      onChange={e => setBulkText(e.target.value)}
+                      placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm outline-none resize-none font-mono"
+                    />
+                    <div className="flex gap-4">
+                      <button 
+                        type="button"
+                        onClick={() => setIsBulkModalOpen(false)}
+                        className="flex-1 py-3 bg-zinc-100 text-zinc-500 font-bold rounded-xl hover:bg-zinc-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button 
+                        type="button"
+                        onClick={handleBulkAdd}
+                        className="flex-1 py-3 bg-black text-white font-bold rounded-xl hover:bg-zinc-800 transition-colors"
+                      >
+                        Add Pages
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end gap-4 pt-8 border-t border-zinc-100">
                 <button 
                   type="button" 

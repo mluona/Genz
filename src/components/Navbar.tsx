@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Search, LogIn, User, LayoutDashboard, Menu, X, Bell } from 'lucide-react';
+import { Search, LogIn, User, LayoutDashboard, Menu, X, Bell, LogOut } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
+import { motion, AnimatePresence } from 'motion/react';
 
 export const Navbar: React.FC = () => {
   const { user, profile, isAdmin } = useAuth();
@@ -113,43 +114,74 @@ export const Navbar: React.FC = () => {
       </div>
 
       {/* Mobile Menu */}
-      {isMenuOpen && (
-        <div className="md:hidden bg-zinc-900 border-b border-white/5 p-4 space-y-4">
-          <form onSubmit={handleSearch} className="relative">
-            <input
-              type="text"
-              placeholder="Search series..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-zinc-800 border border-white/10 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none"
-            />
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
-          </form>
-          <div className="grid grid-cols-3 gap-2">
-            <Link to="/manga" onClick={() => setIsMenuOpen(false)} className="text-center py-2 bg-zinc-800 rounded-lg text-sm font-medium">Manga</Link>
-            <Link to="/manhwa" onClick={() => setIsMenuOpen(false)} className="text-center py-2 bg-zinc-800 rounded-lg text-sm font-medium">Manhwa</Link>
-            <Link to="/novels" onClick={() => setIsMenuOpen(false)} className="text-center py-2 bg-zinc-800 rounded-lg text-sm font-medium">Novels</Link>
-          </div>
-          {isAdmin && (
-            <Link 
-              to="/admin" 
-              onClick={() => setIsMenuOpen(false)}
-              className="flex items-center justify-center gap-2 w-full py-3 bg-emerald-500 text-black font-bold rounded-xl"
-            >
-              <LayoutDashboard className="w-5 h-5" />
-              Admin Dashboard
-            </Link>
-          )}
-          {!user && (
-            <button
-              onClick={handleLogin}
-              className="w-full py-2 bg-white text-black font-bold rounded-lg"
-            >
-              Login with Google
-            </button>
-          )}
-        </div>
-      )}
+      <AnimatePresence>
+        {isMenuOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="md:hidden bg-zinc-950 border-b border-white/5 overflow-hidden"
+          >
+            <div className="px-4 py-6 space-y-6">
+              <form onSubmit={handleSearch} className="relative">
+                <input
+                  type="text"
+                  placeholder="Search series..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full bg-zinc-900 border border-white/10 rounded-xl py-3 pl-12 pr-4 text-sm focus:outline-none focus:border-emerald-500/50"
+                />
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-zinc-500" />
+              </form>
+
+              <div className="grid grid-cols-2 gap-3">
+                <Link to="/manga" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Manga</Link>
+                <Link to="/manhwa" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Manhwa</Link>
+                <Link to="/novels" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Novels</Link>
+                <Link to="/latest" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Latest</Link>
+              </div>
+
+              {isAdmin && (
+                <Link 
+                  to="/admin" 
+                  onClick={() => setIsMenuOpen(false)}
+                  className="flex items-center justify-center gap-2 w-full py-4 bg-emerald-500 text-black font-black rounded-xl uppercase tracking-widest text-xs"
+                >
+                  <LayoutDashboard className="w-5 h-5" />
+                  Admin Dashboard
+                </Link>
+              )}
+
+              {user ? (
+                <div className="flex items-center justify-between p-4 bg-zinc-900 rounded-2xl">
+                  <Link to="/profile" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3">
+                    <img
+                      src={profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
+                      alt="Profile"
+                      className="w-10 h-10 rounded-full border border-white/10"
+                    />
+                    <div>
+                      <p className="text-sm font-bold">{profile?.username || user.displayName}</p>
+                      <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">View Profile</p>
+                    </div>
+                  </Link>
+                  <button onClick={() => signOut(auth)} className="p-2 text-zinc-500 hover:text-red-500">
+                    <LogOut className="w-5 h-5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={handleLogin}
+                  className="flex items-center justify-center gap-2 w-full py-4 bg-white text-black font-black rounded-xl uppercase tracking-widest text-xs"
+                >
+                  <LogIn className="w-5 h-5" />
+                  Login with Google
+                </button>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </nav>
   );
 };

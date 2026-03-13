@@ -95,22 +95,22 @@ export const Home: React.FC = () => {
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-12 relative z-30 space-y-20">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-12 relative z-30 space-y-16 sm:space-y-24">
         
         {/* Latest Chapters */}
         <section>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-emerald-500/10 rounded-lg">
-                <Zap className="w-6 h-6 text-emerald-500" />
+          <div className="flex items-center justify-between mb-6 sm:mb-8">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-emerald-500/10 rounded-lg">
+                <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
               </div>
-              <h2 className="text-2xl font-black tracking-tight uppercase">Latest Releases</h2>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase">Latest Releases</h2>
             </div>
-            <Link to="/latest" className="text-sm font-bold text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
+            <Link to="/latest" className="text-xs sm:text-sm font-bold text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
               View All <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 sm:gap-6">
             {recentlyUpdated.slice(0, 6).map((series) => (
               <SeriesCard key={series.id} series={series} />
             ))}
@@ -118,17 +118,17 @@ export const Home: React.FC = () => {
         </section>
 
         {/* Top Viewed Grid */}
-        <section className="grid lg:grid-cols-3 gap-12">
+        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 sm:gap-12">
           {/* Daily Top */}
-          <div>
-            <div className="flex items-center gap-3 mb-8">
-              <TrendingUp className="w-6 h-6 text-emerald-500" />
-              <h2 className="text-xl font-black tracking-tight uppercase">Daily Top</h2>
+          <div className="space-y-6 sm:space-y-8">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
+              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Daily Top</h2>
             </div>
             <div className="space-y-4">
               {dailyTop.map((series, i) => (
                 <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-3xl font-black text-zinc-800 w-8">{i + 1}</span>
+                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
                   <SeriesCard series={series} compact />
                 </div>
               ))}
@@ -136,15 +136,15 @@ export const Home: React.FC = () => {
           </div>
 
           {/* Weekly Top */}
-          <div>
-            <div className="flex items-center gap-3 mb-8">
-              <TrendingUp className="w-6 h-6 text-blue-500" />
-              <h2 className="text-xl font-black tracking-tight uppercase">Weekly Top</h2>
+          <div className="space-y-6 sm:space-y-8">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
+              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Weekly Top</h2>
             </div>
             <div className="space-y-4">
               {weeklyTop.map((series, i) => (
                 <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-3xl font-black text-zinc-800 w-8">{i + 1}</span>
+                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
                   <SeriesCard series={series} compact />
                 </div>
               ))}
@@ -152,15 +152,15 @@ export const Home: React.FC = () => {
           </div>
 
           {/* Monthly Top */}
-          <div>
-            <div className="flex items-center gap-3 mb-8">
-              <TrendingUp className="w-6 h-6 text-purple-500" />
-              <h2 className="text-xl font-black tracking-tight uppercase">Monthly Top</h2>
+          <div className="space-y-6 sm:space-y-8">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-purple-500" />
+              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Monthly Top</h2>
             </div>
             <div className="space-y-4">
               {monthlyTop.map((series, i) => (
                 <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-3xl font-black text-zinc-800 w-8">{i + 1}</span>
+                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
                   <SeriesCard series={series} compact />
                 </div>
               ))}
@@ -170,15 +170,15 @@ export const Home: React.FC = () => {
 
         {/* Recently Updated Series */}
         <section>
-          <div className="flex items-center justify-between mb-8">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-500/10 rounded-lg">
-                <Clock className="w-6 h-6 text-blue-500" />
+          <div className="flex items-center justify-between mb-6 sm:mb-8">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-blue-500/10 rounded-lg">
+                <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
               </div>
-              <h2 className="text-2xl font-black tracking-tight uppercase">Recently Updated</h2>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase">Recently Updated</h2>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 sm:gap-6">
             {recentlyUpdated.map((series) => (
               <SeriesCard key={series.id} series={series} />
             ))}
@@ -186,16 +186,16 @@ export const Home: React.FC = () => {
         </section>
 
         {/* Popular Works */}
-        <section className="bg-zinc-900/50 border border-white/5 rounded-[2rem] p-8 sm:p-12">
-          <div className="flex items-center justify-between mb-12">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-yellow-500/10 rounded-lg">
-                <Star className="w-6 h-6 text-yellow-500" />
+        <section className="bg-zinc-900/50 border border-white/5 rounded-[1.5rem] sm:rounded-[2rem] p-6 sm:p-12">
+          <div className="flex items-center justify-between mb-8 sm:mb-12">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className="p-1.5 sm:p-2 bg-yellow-500/10 rounded-lg">
+                <Star className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
               </div>
-              <h2 className="text-3xl font-black tracking-tight uppercase">Popular Works</h2>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight uppercase">Popular Works</h2>
             </div>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-8">
+          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 sm:gap-8">
             {popularWorks.map((series) => (
               <SeriesCard key={series.id} series={series} />
             ))}

@@ -1,27 +1,43 @@
 import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle } from 'lucide-react';
 import axios from 'axios';
 
 export const AutoImport: React.FC = () => {
   const [sources, setSources] = useState([
-    { id: '1', name: 'MangaSource RSS', url: 'https://example.com/rss', type: 'RSS', status: 'Active', lastSync: '2 hours ago' },
-    { id: '2', name: 'ManhwaAPI', url: 'https://api.example.com/v1', type: 'API', status: 'Idle', lastSync: '1 day ago' },
+    { id: '1', name: 'MangaSource RSS', url: 'https://rss.app/feeds/v1/manga', type: 'RSS', status: 'Active', lastSync: '2 hours ago' },
   ]);
   const [isImporting, setIsImporting] = useState(false);
   const [importLog, setImportLog] = useState<string[]>([]);
+  const [rssItems, setRssItems] = useState<any[]>([]);
 
   const handleRunImport = async (sourceId: string) => {
+    const source = sources.find(s => s.id === sourceId);
+    if (!source) return;
+
     setIsImporting(true);
-    setImportLog(['Starting import process...', `Connecting to source ${sourceId}...`]);
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting import from ${source.name}...`]);
     
-    // Simulate import steps
-    setTimeout(() => setImportLog(prev => [...prev, 'Fetching latest updates...']), 1000);
-    setTimeout(() => setImportLog(prev => [...prev, 'Found 3 new chapters for "Solo Leveling"']), 2000);
-    setTimeout(() => setImportLog(prev => [...prev, 'Downloading chapter 179 pages...']), 3000);
-    setTimeout(() => {
-      setImportLog(prev => [...prev, 'Successfully imported 3 chapters!']);
+    try {
+      const response = await fetch(`/api/import/rss?url=${encodeURIComponent(source.url)}`);
+      const xmlText = await response.text();
+      
+      // Simple XML parsing for RSS
+      const parser = new DOMParser();
+      const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+      const items = Array.from(xmlDoc.querySelectorAll("item")).map(item => ({
+        title: item.querySelector("title")?.textContent,
+        link: item.querySelector("link")?.textContent,
+        pubDate: item.querySelector("pubDate")?.textContent,
+      }));
+
+      setRssItems(items);
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${items.length} items in feed.`]);
+    } catch (error) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to fetch RSS feed.`]);
+    } finally {
       setIsImporting(false);
-    }, 5000);
+    }
   };
 
   return (
@@ -86,15 +102,37 @@ export const AutoImport: React.FC = () => {
               <h3 className="text-white font-black uppercase tracking-tight text-sm">Import Console</h3>
               {isImporting && <div className="w-4 h-4 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />}
             </div>
-            <div className="space-y-2 font-mono text-xs h-48 overflow-y-auto custom-scrollbar">
+            <div className="space-y-2 font-mono text-xs h-48 overflow-y-auto custom-scrollbar mb-6">
               {importLog.map((log, i) => (
                 <div key={i} className="flex gap-3">
                   <span className="text-zinc-600">[{new Date().toLocaleTimeString()}]</span>
-                  <span className={log.includes('Successfully') ? 'text-emerald-400' : 'text-zinc-300'}>{log}</span>
+                  <span className={log.includes('Successfully') || log.includes('Found') ? 'text-emerald-400' : log.includes('Error') ? 'text-red-400' : 'text-zinc-300'}>{log}</span>
                 </div>
               ))}
               {importLog.length === 0 && <p className="text-zinc-600 italic">Waiting for import task...</p>}
             </div>
+
+            {rssItems.length > 0 && (
+              <div className="space-y-4 border-t border-white/10 pt-6">
+                <h4 className="text-white text-[10px] font-black uppercase tracking-widest">Latest Feed Items</h4>
+                <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
+                  {rssItems.map((item, i) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors group">
+                      <div className="flex-1 min-w-0 mr-4">
+                        <p className="text-white text-xs font-bold truncate">{item.title}</p>
+                        <p className="text-zinc-500 text-[10px] truncate">{item.link}</p>
+                      </div>
+                      <Link 
+                        to={`/admin/chapters?scrapeUrl=${encodeURIComponent(item.link || '')}`}
+                        className="px-3 py-1.5 bg-emerald-500 text-black text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        Import
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 

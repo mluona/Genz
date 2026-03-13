@@ -225,20 +225,48 @@ export const SeriesManagement: React.FC = () => {
                 </div>
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Cover Image URL</label>
-                    <div className="flex gap-4">
-                      <input 
-                        type="text" 
-                        value={formData.coverImage}
-                        onChange={e => setFormData({...formData, coverImage: e.target.value})}
-                        className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                      />
-                      <button type="button" className="p-3 bg-zinc-100 rounded-2xl text-zinc-500 hover:bg-zinc-200">
-                        <Upload className="w-5 h-5" />
-                      </button>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Cover Image</label>
+                    <div className="flex flex-col gap-4">
+                      <div className="flex gap-4">
+                        <input 
+                          type="text" 
+                          placeholder="Image URL"
+                          value={formData.coverImage}
+                          onChange={e => setFormData({...formData, coverImage: e.target.value})}
+                          className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
+                        />
+                        <label className="p-3 bg-zinc-100 rounded-2xl text-zinc-500 hover:bg-zinc-200 cursor-pointer transition-colors">
+                          <Upload className="w-5 h-5" />
+                          <input 
+                            type="file" 
+                            className="hidden" 
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const reader = new FileReader();
+                                reader.onloadend = () => {
+                                  setFormData({...formData, coverImage: reader.result as string});
+                                };
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Or upload a file from your device</p>
                     </div>
                     {formData.coverImage && (
-                      <img src={formData.coverImage} className="mt-4 w-32 h-44 object-cover rounded-2xl border border-zinc-200" alt="Preview" />
+                      <div className="relative mt-4 w-32 h-44 group">
+                        <img src={formData.coverImage} className="w-full h-full object-cover rounded-2xl border border-zinc-200 shadow-lg" alt="Preview" />
+                        <button 
+                          type="button"
+                          onClick={() => setFormData({...formData, coverImage: ''})}
+                          className="absolute -top-2 -right-2 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                   <div className="grid grid-cols-2 gap-4">
