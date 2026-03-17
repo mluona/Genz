@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle, X } from 'lucide-react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, Timestamp, query, orderBy } from 'firebase/firestore';
+import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle, X, Edit2 } from 'lucide-react';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, where, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import axios from 'axios';
 
@@ -10,16 +10,23 @@ export const AutoImport: React.FC = () => {
   const [isImporting, setIsImporting] = useState(false);
   const [importLog, setImportLog] = useState<string[]>([]);
   const [rssItems, setRssItems] = useState<any[]>([]);
+  const [scrapedData, setScrapedData] = useState<any>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingSource, setEditingSource] = useState<any>(null);
   const [newSource, setNewSource] = useState({
     name: '',
     url: '',
+    cookies: '',
+    userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
   });
+  const [isTesting, setIsTesting] = useState<string | null>(null);
 
   useEffect(() => {
     const q = query(collection(db, 'import_sources'), orderBy('createdAt', 'desc'));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       setSources(snapshot.docs.map(d => ({ id: d.id, ...d.data() })));
+    }, (error) => {
+      console.error("Firestore error in AutoImport:", error);
     });
     return () => unsubscribe();
   }, []);
@@ -27,18 +34,38 @@ export const AutoImport: React.FC = () => {
   const handleAddSource = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await addDoc(collection(db, 'import_sources'), {
-        ...newSource,
-        type: 'Website',
-        status: 'Active',
-        lastSync: 'Never',
-        createdAt: Timestamp.now(),
-      });
+      if (editingSource) {
+        await updateDoc(doc(db, 'import_sources', editingSource.id), {
+          ...newSource,
+          lastUpdated: Timestamp.now(),
+        });
+      } else {
+        await addDoc(collection(db, 'import_sources'), {
+          ...newSource,
+          type: 'Website',
+          status: 'Active',
+          lastSync: 'Never',
+          createdAt: Timestamp.now(),
+        });
+      }
       setIsModalOpen(false);
-      setNewSource({ name: '', url: '' });
+      setEditingSource(null);
+      setNewSource({ name: '', url: '', cookies: '', userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36' });
     } catch (error) {
-      console.error("Error adding source:", error);
+      console.error("Error saving source:", error);
+      alert("Failed to save source. Check permissions.");
     }
+  };
+
+  const handleEditSource = (source: any) => {
+    setEditingSource(source);
+    setNewSource({ 
+      name: source.name, 
+      url: source.url,
+      cookies: source.cookies || '',
+      userAgent: source.userAgent || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+    });
+    setIsModalOpen(true);
   };
 
   const handleDeleteSource = async (id: string) => {
@@ -49,31 +76,240 @@ export const AutoImport: React.FC = () => {
     }
   };
 
+  const handleTestConnection = async (source: any) => {
+    setIsTesting(source.id);
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Testing connection to: ${source.name}...`]);
+    
+    try {
+      const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(source.url)}&cookies=${encodeURIComponent(source.cookies || '')}&userAgent=${encodeURIComponent(source.userAgent || '')}`);
+      const data = await response.json();
+      
+      if (response.ok) {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Success: Connection established. Detected type: ${data.type}`]);
+      } else {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: ${data.details || data.error}`]);
+      }
+    } catch (error: any) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Network failure.`]);
+    } finally {
+      setIsTesting(null);
+    }
+  };
+
   const handleRunImport = async (sourceId: string) => {
     const source = sources.find(s => s.id === sourceId);
     if (!source) return;
 
     setIsImporting(true);
-    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Scanning website: ${source.name}...`]);
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting deep scan of: ${source.name}...`]);
     
     try {
-      const response = await fetch(`/api/scrape/images?url=${encodeURIComponent(source.url)}`);
+      const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(source.url)}`);
       const data = await response.json();
+      setScrapedData(data);
       
-      if (data.images) {
-        const items = data.images.slice(0, 20).map((img: string, i: number) => ({
-          title: `Image ${i + 1}`,
-          link: img,
-          pubDate: new Date().toISOString(),
-        }));
-
-        setRssItems(items);
-        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${data.images.length} images on page.`]);
+      if (data.type === 'list') {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${data.series?.length || 0} series to import.`]);
+      } else if (data.type === 'series') {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found series: ${data.title} with ${data.chapters?.length || 0} chapters.`]);
+      } else {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Scan complete. Type: ${data.type}`]);
       }
     } catch (error) {
       setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to scan website.`]);
     } finally {
       setIsImporting(false);
+    }
+  };
+
+  const handleImportSeries = async (seriesData: any) => {
+    if (!seriesData.title) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Series title not found. Skipping.`]);
+      return;
+    }
+
+    setIsImporting(true);
+    
+    try {
+      // 1. Check if series already exists
+      const slug = seriesData.title.toLowerCase().trim().replace(/ /g, '-').replace(/[^\w-]+/g, '') || `series-${Date.now()}`;
+      const existingQuery = query(collection(db, 'series'), where('slug', '==', slug));
+      const existingSnapshot = await getDocs(existingQuery);
+      
+      let seriesId: string;
+      let existingChapters: number[] = [];
+
+      // Find the source this series belongs to (if any) to get its cookies
+      const source = sources.find(src => seriesData.url.includes(new URL(src.url).hostname));
+
+      if (!existingSnapshot.empty) {
+        const existingDoc = existingSnapshot.docs[0];
+        seriesId = existingDoc.id;
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Series "${seriesData.title}" already exists. Checking for new chapters...`]);
+        
+        // Get existing chapter numbers
+        const chaptersSnap = await getDocs(collection(db, 'series', seriesId, 'chapters'));
+        existingChapters = chaptersSnap.docs.map(d => d.data().chapterNumber);
+      } else {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Importing new series: ${seriesData.title}...`]);
+        const seriesRef = await addDoc(collection(db, 'series'), {
+          title: seriesData.title,
+          description: seriesData.description || '',
+          coverImage: seriesData.coverImage || '',
+          type: 'Manga',
+          status: 'Ongoing',
+          genres: [],
+          tags: [],
+          views: 0,
+          rating: 5,
+          ratingCount: 1,
+          lastUpdated: Timestamp.now(),
+          slug,
+          createdAt: Timestamp.now(),
+        });
+        seriesId = seriesRef.id;
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Series created (ID: ${seriesId}).`]);
+      }
+
+      // 2. Import Chapters
+      if (seriesData.chapters && seriesData.chapters.length > 0) {
+        const newChapters = seriesData.chapters.filter((ch: any) => !existingChapters.includes(ch.chapterNumber));
+        
+        if (newChapters.length === 0) {
+          setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] No new chapters found for ${seriesData.title}.`]);
+        } else {
+          setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${newChapters.length} new chapters. Importing...`]);
+          
+          // Limit to first 20 new chapters to avoid timeouts
+          const chaptersToImport = newChapters.slice(0, 20);
+          
+          for (const chapter of chaptersToImport) {
+            let retryCount = 0;
+            const maxRetries = 3;
+            let success = false;
+
+            while (retryCount < maxRetries && !success) {
+              try {
+                if (retryCount > 0) {
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Retrying ${chapter.title} (Attempt ${retryCount + 1})...`]);
+                  await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+                } else {
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Scraping chapter: ${chapter.title}...`]);
+                }
+                
+                const chResponse = await fetch(`/api/scrape/auto?url=${encodeURIComponent(chapter.url)}&cookies=${encodeURIComponent(source?.cookies || '')}&userAgent=${encodeURIComponent(source?.userAgent || '')}`);
+                const chData = await chResponse.json();
+
+                if (!chResponse.ok) {
+                  const errorMsg = chData.details || chData.error || `Server returned ${chResponse.status}`;
+                  if (chResponse.status === 403) {
+                    throw new Error(`Access Forbidden (403): ${errorMsg}. This site likely has Cloudflare protection. Try adding cookies/user-agent.`);
+                  }
+                  throw new Error(errorMsg);
+                }
+                
+                if (chData.images && chData.images.length > 0) {
+                  await addDoc(collection(db, 'series', seriesId, 'chapters'), {
+                    seriesId: seriesId,
+                    chapterNumber: chapter.chapterNumber,
+                    title: chapter.title,
+                    content: chData.images,
+                    publishDate: Timestamp.now(),
+                    views: 0,
+                  });
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Imported ${chapter.title} (${chData.images.length} pages).`]);
+                  success = true;
+                } else {
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Warning: No images found for ${chapter.title}.`]);
+                  success = true; // Don't retry if it successfully scraped but found no images
+                }
+              } catch (chError: any) {
+                retryCount++;
+                if (retryCount >= maxRetries) {
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error importing ${chapter.title}: ${chError.message}`]);
+                }
+              }
+            }
+          }
+          
+          // Update series lastUpdated
+          await updateDoc(doc(db, 'series', seriesId), {
+            lastUpdated: Timestamp.now()
+          });
+        }
+      }
+
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Task finished for: ${seriesData.title}`]);
+    } catch (error: any) {
+      console.error("Import failed:", error);
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] CRITICAL Error: ${error.message}`]);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleSyncAll = async () => {
+    if (isImporting) return;
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting global sync for all sources...`]);
+    
+    try {
+      for (const source of sources) {
+        if (source.status !== 'Active') continue;
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Syncing source: ${source.name}...`]);
+        try {
+          const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(source.url)}&cookies=${encodeURIComponent(source.cookies || '')}&userAgent=${encodeURIComponent(source.userAgent || '')}`);
+          const data = await response.json();
+          
+          if (!response.ok) {
+            throw new Error(data.details || data.error || `Server returned ${response.status}`);
+          }
+          
+          if (data.type === 'list' && data.series) {
+            for (const s of data.series) {
+              setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Fetching details for: ${s.title}...`]);
+              const res = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.url)}&cookies=${encodeURIComponent(source.cookies || '')}&userAgent=${encodeURIComponent(source.userAgent || '')}`);
+              if (!res.ok) {
+                const errData = await res.json();
+                setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Could not fetch details for ${s.title} (${errData.details || res.statusText})`]);
+                continue;
+              }
+              const full = await res.json();
+              await handleImportSeries(full);
+              await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s between series
+            }
+          } else if (data.type === 'series') {
+            await handleImportSeries(data);
+          }
+          
+          // Update source lastSync
+          await updateDoc(doc(db, 'import_sources', source.id), {
+            lastSync: new Date().toLocaleString()
+          });
+        } catch (error: any) {
+          setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error syncing ${source.name}: ${error.message}`]);
+        }
+      }
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Global sync complete.`]);
+    } catch (error: any) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Global sync failed: ${error.message}`]);
+    }
+  };
+
+  const handleImportAll = async () => {
+    if (!scrapedData || scrapedData.type !== 'list') return;
+    
+    // Find the source this series belongs to (if any) to get its cookies
+    const source = sources.find(src => scrapedData.url.includes(new URL(src.url).hostname));
+
+    for (const s of scrapedData.series) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Deep scraping series details: ${s.title}...`]);
+      try {
+        const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.url)}&cookies=${encodeURIComponent(source?.cookies || '')}&userAgent=${encodeURIComponent(source?.userAgent || '')}`);
+        const fullData = await response.json();
+        await handleImportSeries(fullData);
+      } catch (error) {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to fetch details for ${s.title}`]);
+      }
     }
   };
 
@@ -84,12 +320,27 @@ export const AutoImport: React.FC = () => {
           <h1 className="text-3xl font-black tracking-tight">Auto Import System</h1>
           <p className="text-zinc-500 font-medium">Connect external sources to automatically import new chapters.</p>
         </div>
-        <button 
-          onClick={() => setIsModalOpen(true)}
-          className="flex items-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
-        >
-          <Plus className="w-5 h-5" /> Add New Source
-        </button>
+        <div className="flex gap-4">
+          <button 
+            onClick={() => setImportLog([])}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-800 text-white font-bold rounded-2xl hover:bg-zinc-700 transition-colors"
+          >
+            Clear Logs
+          </button>
+          <button 
+            onClick={handleSyncAll}
+            disabled={isImporting}
+            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors disabled:opacity-50"
+          >
+            <Zap className="w-5 h-5" /> Sync All Sources
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="flex items-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
+          >
+            <Plus className="w-5 h-5" /> Add New Source
+          </button>
+        </div>
       </div>
 
       <div className="grid lg:grid-cols-3 gap-8">
@@ -119,6 +370,24 @@ export const AutoImport: React.FC = () => {
                       <p className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-widest">Last sync: {source.lastSync}</p>
                     </div>
                     <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => handleTestConnection(source)}
+                        disabled={isTesting === source.id || isImporting}
+                        className={`p-2 rounded-lg transition-colors ${isTesting === source.id ? 'text-zinc-300' : 'text-zinc-400 hover:text-emerald-500 hover:bg-emerald-50'}`}
+                        title="Test Connection"
+                      >
+                        {isTesting === source.id ? (
+                          <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Zap className="w-5 h-5" />
+                        )}
+                      </button>
+                      <button 
+                        onClick={() => handleEditSource(source)}
+                        className="p-2 text-zinc-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
+                      >
+                        <Edit2 className="w-5 h-5" />
+                      </button>
                       <button 
                         onClick={() => handleRunImport(source.id)}
                         disabled={isImporting}
@@ -155,22 +424,77 @@ export const AutoImport: React.FC = () => {
               {importLog.length === 0 && <p className="text-zinc-600 italic">Waiting for import task...</p>}
             </div>
 
-            {rssItems.length > 0 && (
+            {scrapedData && (
               <div className="space-y-4 border-t border-white/10 pt-6">
-                <h4 className="text-white text-[10px] font-black uppercase tracking-widest">Latest Feed Items</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="text-white text-[10px] font-black uppercase tracking-widest">
+                    Discovered {scrapedData.type === 'list' ? 'Series' : scrapedData.type === 'series' ? 'Chapters' : 'Content'}
+                  </h4>
+                  {scrapedData.type === 'list' && (
+                    <button 
+                      onClick={handleImportAll}
+                      disabled={isImporting}
+                      className="px-3 py-1 bg-emerald-500 text-black text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-emerald-400 disabled:opacity-50"
+                    >
+                      Import All Discovered
+                    </button>
+                  )}
+                  {scrapedData.type === 'series' && (
+                    <button 
+                      onClick={() => handleImportSeries(scrapedData)}
+                      disabled={isImporting}
+                      className="px-3 py-1 bg-emerald-500 text-black text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-emerald-400 disabled:opacity-50"
+                    >
+                      Import This Series
+                    </button>
+                  )}
+                </div>
+                
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
-                  {rssItems.map((item, i) => (
+                  {scrapedData.type === 'list' && scrapedData.series?.map((s: any, i: number) => (
                     <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl hover:bg-white/10 transition-colors group">
-                      <div className="flex-1 min-w-0 mr-4">
-                        <p className="text-white text-xs font-bold truncate">{item.title}</p>
-                        <p className="text-zinc-500 text-[10px] truncate">{item.link}</p>
+                      <div className="flex items-center gap-3 flex-1 min-w-0 mr-4">
+                        {s.coverImage && <img src={s.coverImage || undefined} className="w-8 h-10 object-cover rounded-md" alt="" referrerPolicy="no-referrer" />}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-xs font-bold truncate">{s.title}</p>
+                          <p className="text-zinc-500 text-[10px] truncate">{s.url}</p>
+                        </div>
                       </div>
-                      <Link 
-                        to={`/admin/chapters?scrapeUrl=${encodeURIComponent(item.link || '')}`}
-                        className="px-3 py-1.5 bg-emerald-500 text-black text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                      <button 
+                        onClick={async () => {
+                          setIsImporting(true);
+                          try {
+                            const res = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.url)}`);
+                            const full = await res.json();
+                            await handleImportSeries(full);
+                          } catch (e) {
+                            setImportLog(prev => [...prev, `Error fetching details for ${s.title}`]);
+                          } finally {
+                            setIsImporting(false);
+                          }
+                        }}
+                        disabled={isImporting}
+                        className="px-3 py-1.5 bg-emerald-500 text-black text-[10px] font-black uppercase tracking-widest rounded-lg opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
                       >
                         Import
-                      </Link>
+                      </button>
+                    </div>
+                  ))}
+
+                  {scrapedData.type === 'series' && scrapedData.chapters?.map((ch: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+                      <div className="flex-1 min-w-0 mr-4">
+                        <p className="text-white text-xs font-bold truncate">{ch.title}</p>
+                        <p className="text-zinc-500 text-[10px] truncate">{ch.url}</p>
+                      </div>
+                      <span className="text-emerald-500 text-[10px] font-black uppercase tracking-widest">Pending</span>
+                    </div>
+                  ))}
+
+                  {scrapedData.type === 'chapter' && scrapedData.images?.map((img: string, i: number) => (
+                    <div key={i} className="flex items-center gap-3 p-2 bg-white/5 rounded-lg">
+                      <img src={img || undefined} className="w-12 h-12 object-cover rounded" alt="" />
+                      <p className="text-zinc-500 text-[10px] truncate">{img}</p>
                     </div>
                   ))}
                 </div>
@@ -222,8 +546,8 @@ export const AutoImport: React.FC = () => {
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-md rounded-[2.5rem] shadow-2xl p-8 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-black uppercase tracking-tight">Add Source</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-zinc-400 hover:bg-zinc-100 rounded-full">
+              <h2 className="text-2xl font-black uppercase tracking-tight">{editingSource ? 'Edit Source' : 'Add Source'}</h2>
+              <button onClick={() => { setIsModalOpen(false); setEditingSource(null); }} className="p-2 text-zinc-400 hover:bg-zinc-100 rounded-full">
                 <X className="w-6 h-6" />
               </button>
             </div>
@@ -247,13 +571,38 @@ export const AutoImport: React.FC = () => {
                   value={newSource.url}
                   onChange={e => setNewSource({...newSource, url: e.target.value})}
                   className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
-                  placeholder="https://example.com/chapter-1"
+                  placeholder="https://example.com/latest"
                 />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Custom Cookies (Optional - for Cloudflare)</label>
+                <textarea 
+                  value={newSource.cookies}
+                  onChange={e => setNewSource({...newSource, cookies: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20 h-20 resize-none"
+                  placeholder="cf_clearance=...; session=..."
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">User Agent (Optional)</label>
+                <input 
+                  type="text" 
+                  value={newSource.userAgent}
+                  onChange={e => setNewSource({...newSource, userAgent: e.target.value})}
+                  className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none focus:ring-2 focus:ring-emerald-500/20"
+                  placeholder="Mozilla/5.0..."
+                />
+              </div>
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl">
+                <p className="text-[10px] text-amber-700 font-bold leading-relaxed">
+                  <span className="uppercase tracking-widest block mb-1">Cloudflare Bypass:</span>
+                  If you get a 403 error, open the site in your browser, solve the challenge, then copy your cookies (F12 {'>'} Application {'>'} Cookies) and User Agent (F12 {'>'} Console {'>'} navigator.userAgent) here.
+                </p>
               </div>
               <div className="flex gap-4 pt-4">
                 <button 
                   type="button" 
-                  onClick={() => setIsModalOpen(false)}
+                  onClick={() => { setIsModalOpen(false); setEditingSource(null); }}
                   className="flex-1 py-3 text-zinc-500 font-bold hover:bg-zinc-100 rounded-xl transition-colors"
                 >
                   Cancel
@@ -262,7 +611,7 @@ export const AutoImport: React.FC = () => {
                   type="submit"
                   className="flex-1 py-3 bg-black text-white font-bold rounded-xl hover:bg-zinc-800 transition-colors"
                 >
-                  Add Source
+                  {editingSource ? 'Save Changes' : 'Add Source'}
                 </button>
               </div>
             </form>

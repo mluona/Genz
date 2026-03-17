@@ -38,7 +38,7 @@ export const Profile: React.FC = () => {
     <div className="min-h-screen bg-zinc-950 text-white pb-20">
       <div className="relative h-[30vh] bg-zinc-900 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 to-transparent" />
-        <img src="https://picsum.photos/seed/profile-bg/1920/1080" className="w-full h-full object-cover opacity-20" alt="" />
+        <img src="https://picsum.photos/seed/profile-bg/1920/1080" className="w-full h-full object-cover opacity-20" alt="" referrerPolicy="no-referrer" />
       </div>
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 -mt-24 relative z-10">
@@ -51,6 +51,7 @@ export const Profile: React.FC = () => {
                   src={profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} 
                   className="w-32 h-32 rounded-full border-4 border-zinc-950 shadow-2xl mx-auto object-cover" 
                   alt="Profile" 
+                  referrerPolicy="no-referrer"
                 />
                 <button className="absolute bottom-0 right-0 p-2 bg-emerald-500 text-black rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
                   <Camera className="w-4 h-4" />

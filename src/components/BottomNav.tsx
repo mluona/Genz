@@ -1,13 +1,17 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Compass, Bookmark, User, LayoutGrid } from 'lucide-react';
+import { Home, BookOpen, Bookmark, User } from 'lucide-react';
 
 export const BottomNav: React.FC = () => {
   const location = useLocation();
   
+  // Hide on Reader page
+  const isReaderPage = location.pathname.split('/').length >= 4 && location.pathname.includes('/series/');
+  if (isReaderPage) return null;
+  
   const navItems = [
     { icon: Home, label: 'Home', path: '/' },
-    { icon: Compass, label: 'Discover', path: '/discover' },
+    { icon: BookOpen, label: 'Novels', path: '/novels' },
     { icon: Bookmark, label: 'Library', path: '/library' },
     { icon: User, label: 'Profile', path: '/profile' },
   ];

@@ -1,17 +1,33 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, getDocs } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Series, Chapter } from '../../types';
-import { Plus, Edit2, Trash2, X, Upload, Image as ImageIcon, ArrowRight, Layers } from 'lucide-react';
+import { compressImage } from '../../utils/imageCompression';
+import { 
+  Plus, Edit2, Trash2, X, Upload, Image as ImageIcon, 
+  Layers, Loader2, FileArchive, AlertCircle, ArrowUp, 
+  ArrowDown, Search, Filter, ChevronRight, Check, 
+  GripVertical, ExternalLink, RefreshCw, Type
+} from 'lucide-react';
+import JSZip from 'jszip';
+import { motion, AnimatePresence } from 'motion/react';
+import { clsx, type ClassValue } from 'clsx';
+import { twMerge } from 'tailwind-merge';
+
+function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 export const ChapterManagement: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [seriesList, setSeriesList] = useState<Series[]>([]);
   const [selectedSeries, setSelectedSeries] = useState<Series | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingChapter, setEditingChapter] = useState<Chapter | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  
   const [formData, setFormData] = useState({
     chapterNumber: 1,
     title: '',
@@ -19,13 +35,38 @@ export const ChapterManagement: React.FC = () => {
     publishDate: new Date().toISOString().split('T')[0],
   });
 
+  // UI States
+  const [uploadProgress, setUploadProgress] = useState<{ [key: string]: number }>({});
+  const [failedUploads, setFailedUploads] = useState<{name: string, error: string, index: number}[]>([]);
+  const [isUploading, setIsUploading] = useState(false);
+  const [totalFilesToUpload, setTotalFilesToUpload] = useState(0);
+  const [completedFilesCount, setCompletedFilesCount] = useState(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const zipInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch Series
   useEffect(() => {
     const unsubscribe = onSnapshot(collection(db, 'series'), (snapshot) => {
-      setSeriesList(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Series)));
+      const list = snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Series));
+      setSeriesList(list);
+      
+      // Auto-select from URL or first available
+      const seriesId = searchParams.get('seriesId');
+      if (seriesId) {
+        const found = list.find(s => s.id === seriesId);
+        if (found) setSelectedSeries(found);
+      }
     });
     return () => unsubscribe();
-  }, []);
+  }, [searchParams]);
 
+  // Fetch Chapters
   useEffect(() => {
     if (!selectedSeries) {
       setChapters([]);
@@ -39,391 +80,751 @@ export const ChapterManagement: React.FC = () => {
     return () => unsubscribe();
   }, [selectedSeries]);
 
-  const [bulkText, setBulkText] = useState('');
-  const [isBulkModalOpen, setIsBulkModalOpen] = useState(false);
-  const [scrapeUrl, setScrapeUrl] = useState(searchParams.get('scrapeUrl') || '');
-  const [isScraping, setIsScraping] = useState(false);
-
-  useEffect(() => {
-    if (searchParams.get('scrapeUrl')) {
-      setIsModalOpen(true);
-    }
-  }, [searchParams]);
-
-  const handleScrape = async () => {
-    if (!scrapeUrl) return;
-    setIsScraping(true);
-    try {
-      const response = await fetch(`/api/scrape/images?url=${encodeURIComponent(scrapeUrl)}`);
-      const data = await response.json();
-      if (data.images) {
-        setFormData({ ...formData, content: [...formData.content, ...data.images] });
-        setScrapeUrl('');
-      }
-    } catch (error) {
-      console.error("Scraping failed:", error);
-    } finally {
-      setIsScraping(false);
-    }
-  };
-
-  const handleBulkAdd = () => {
-    const urls = bulkText.split('\n').map(url => url.trim()).filter(url => url !== '');
-    setFormData({ ...formData, content: [...formData.content, ...urls] });
-    setBulkText('');
-    setIsBulkModalOpen(false);
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    const newPages: string[] = [];
-
-    for (const file of files) {
-      const reader = new FileReader();
-      const promise = new Promise<string>((resolve) => {
-        reader.onloadend = () => resolve(reader.result as string);
-      });
-      reader.readAsDataURL(file);
-      const base64 = await promise;
-      newPages.push(base64);
-    }
-
-    setFormData({ ...formData, content: [...formData.content, ...newPages] });
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Common Upload Logic
+  const uploadFiles = async (files: File[]) => {
     if (!selectedSeries) return;
+    setIsUploading(true);
+    setError(null);
+    setUploadProgress({});
+    setFailedUploads([]);
+    setTotalFilesToUpload(files.length);
+    setCompletedFilesCount(0);
 
-    const data = {
-      ...formData,
+    // Pre-allocate slots with unique temporary IDs to track them
+    const startIndex = formData.content.length;
+    const placeholders = files.map(f => `uploading-${f.name}-${Date.now()}`);
+    setFormData(prev => ({ ...prev, content: [...prev.content, ...placeholders] }));
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      const fileId = placeholders[i];
+      
+      try {
+        console.log(`Starting compression for: ${file.name}`, {
+          size: (file.size / 1024).toFixed(2) + ' KB',
+          type: file.type
+        });
+        
+        // Compress image to ensure it's under 1MB (0.9MB target)
+        const base64Image = await compressImage(file, 0.9);
+        
+        console.log(`Successfully compressed: ${file.name}`);
+        
+        setFormData(prev => {
+          const newContent = [...prev.content];
+          const placeholderIndex = newContent.indexOf(fileId);
+          if (placeholderIndex !== -1) {
+            newContent[placeholderIndex] = base64Image;
+          }
+          return { ...prev, content: newContent };
+        });
+        
+        setCompletedFilesCount(prev => prev + 1);
+        setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
+        
+      } catch (err: any) {
+        console.error(`Compression error for ${file.name}:`, err);
+        setFailedUploads(prev => [...prev, { 
+          name: file.name, 
+          error: err.message || 'Unknown error',
+          index: startIndex + i
+        }]);
+
+        // Remove the placeholder for failed uploads
+        setFormData(prev => ({
+          ...prev,
+          content: prev.content.filter(item => item !== fileId)
+        }));
+      }
+    }
+    setIsUploading(false);
+    setTotalFilesToUpload(0);
+    setCompletedFilesCount(0);
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
+    uploadFiles(files);
+  };
+
+  const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedSeries) return;
+
+    setIsExtracting(true);
+    setError(null);
+    try {
+      const zip = new JSZip();
+      const contents = await zip.loadAsync(file);
+      const imageFiles = Object.keys(contents.files)
+        .filter(name => !contents.files[name].dir && /\.(jpe?g|png|gif|webp|avif|bmp|tiff?|jfif|svg)$/i.test(name))
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+
+      if (imageFiles.length === 0) {
+        setError("No images found in ZIP.");
+        setIsExtracting(false);
+        return;
+      }
+
+      const files: File[] = [];
+      for (const name of imageFiles) {
+        const blob = await contents.files[name].async('blob');
+        files.push(new File([blob], name, { type: blob.type }));
+      }
+      
+      setIsExtracting(false);
+      await uploadFiles(files);
+    } catch (err: any) {
+      setError(`ZIP Error: ${err.message}`);
+      setIsExtracting(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent, shouldContinue = false) => {
+    if (e) e.preventDefault();
+    if (!selectedSeries) return;
+    setIsSaving(true);
+    setError(null);
+
+    const publishDate = new Date(formData.publishDate);
+    
+    // Separate content from chapterData for non-novels
+    const isNovel = selectedSeries.type === 'Novel';
+    const chapterData = {
+      chapterNumber: parseFloat(formData.chapterNumber.toString()),
+      title: formData.title,
       seriesId: selectedSeries.id,
-      publishDate: Timestamp.fromDate(new Date(formData.publishDate)),
+      publishDate: Timestamp.fromDate(publishDate),
       views: editingChapter?.views || 0,
+      content: isNovel ? formData.content : [], // Store empty array for non-novels in the main doc
+      pageCount: isNovel ? (formData.content[0]?.split(/\s+/).filter(Boolean).length || 0) : formData.content.length,
     };
 
     try {
+      let chapterId = editingChapter?.id;
+      
       if (editingChapter) {
-        await updateDoc(doc(db, `series/${selectedSeries.id}/chapters`, editingChapter.id), data);
+        await updateDoc(doc(db, `series/${selectedSeries.id}/chapters`, editingChapter.id), chapterData);
+        setSuccess("Chapter updated successfully!");
       } else {
-        await addDoc(collection(db, `series/${selectedSeries.id}/chapters`), data);
-        // Update series lastUpdated
-        await updateDoc(doc(db, 'series', selectedSeries.id), {
-          lastUpdated: Timestamp.now()
-        });
+        const docRef = await addDoc(collection(db, `series/${selectedSeries.id}/chapters`), chapterData);
+        chapterId = docRef.id;
+        await updateDoc(doc(db, 'series', selectedSeries.id), { lastUpdated: Timestamp.now() });
+        setSuccess("Chapter created successfully!");
       }
-      setIsModalOpen(false);
-      setEditingChapter(null);
-      setFormData({
-        chapterNumber: chapters.length > 0 ? chapters[0].chapterNumber + 1 : 1,
-        title: '',
-        content: [],
-        publishDate: new Date().toISOString().split('T')[0],
-      });
-    } catch (error) {
-      console.error("Error saving chapter:", error);
+      
+      // Save pages to subcollection for non-novels
+      if (chapterId && !isNovel) {
+        const pagesRef = collection(db, `series/${selectedSeries.id}/chapters/${chapterId}/pages`);
+        
+        // We use setDoc with a specific ID (like 'page_0', 'page_1') to overwrite existing pages
+        // and allow easy deletion of extra pages if the new chapter has fewer pages.
+        
+        // First, let's get existing pages to delete any extras
+        const existingPagesSnapshot = await getDocs(pagesRef);
+        const existingPageIds = existingPagesSnapshot.docs.map(d => d.id);
+        
+        // Save new pages
+        const newPageIds = new Set<string>();
+        for (let i = 0; i < formData.content.length; i++) {
+          const pageId = `page_${i.toString().padStart(4, '0')}`;
+          newPageIds.add(pageId);
+          await setDoc(doc(pagesRef, pageId), {
+            pageNumber: i,
+            content: formData.content[i]
+          });
+        }
+        
+        // Delete extra pages
+        for (const oldId of existingPageIds) {
+          if (!newPageIds.has(oldId)) {
+            await deleteDoc(doc(pagesRef, oldId));
+          }
+        }
+      }
+      
+      if (shouldContinue) {
+        const nextNum = chapterData.chapterNumber + 1;
+        setFormData({
+          chapterNumber: nextNum,
+          title: '',
+          content: [],
+          publishDate: new Date().toISOString().split('T')[0],
+        });
+        setEditingChapter(null);
+      } else {
+        setIsEditorOpen(false);
+        setEditingChapter(null);
+        resetForm();
+      }
+    } catch (err: any) {
+      setError(`Save failed: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+      setTimeout(() => setSuccess(null), 3000);
     }
+  };
+
+  const resetForm = () => {
+    setFormData({
+      chapterNumber: chapters.length > 0 ? chapters[0].chapterNumber + 1 : 1,
+      title: '',
+      content: [],
+      publishDate: new Date().toISOString().split('T')[0],
+    });
+    setUploadProgress({});
+    setFailedUploads([]);
   };
 
   const handleDelete = async (id: string) => {
-    if (!selectedSeries) return;
-    if (confirm("Are you sure you want to delete this chapter?")) {
+    if (!selectedSeries || !confirm("Delete this chapter?")) return;
+    try {
       await deleteDoc(doc(db, `series/${selectedSeries.id}/chapters`, id));
+      setSuccess("Chapter deleted.");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setTimeout(() => setSuccess(null), 3000);
     }
   };
 
-  const handleAddImage = () => {
-    setFormData({ ...formData, content: [...formData.content, ''] });
+  const openEditor = async (chapter?: Chapter) => {
+    if (chapter) {
+      let content = chapter.content || [];
+      if (selectedSeries?.type !== 'Novel') {
+        const pagesRef = collection(db, `series/${selectedSeries.id}/chapters/${chapter.id}/pages`);
+        const pagesQuery = query(pagesRef, orderBy('pageNumber', 'asc'));
+        const pagesSnapshot = await getDocs(pagesQuery);
+        if (!pagesSnapshot.empty) {
+          content = pagesSnapshot.docs.map(d => d.data().content);
+        }
+      }
+      
+      setEditingChapter(chapter);
+      setFormData({
+        chapterNumber: chapter.chapterNumber,
+        title: chapter.title || '',
+        content: content,
+        publishDate: chapter.publishDate.toDate().toISOString().split('T')[0]
+      });
+    } else {
+      setEditingChapter(null);
+      resetForm();
+    }
+    setIsEditorOpen(true);
   };
 
-  const handleImageChange = (index: number, value: string) => {
-    const newContent = [...formData.content];
-    newContent[index] = value;
-    setFormData({ ...formData, content: newContent });
-  };
-
-  const handleRemoveImage = (index: number) => {
-    setFormData({ ...formData, content: formData.content.filter((_, i) => i !== index) });
-  };
+  const filteredChapters = chapters.filter(c => 
+    c.title?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    c.chapterNumber.toString().includes(searchTerm)
+  );
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-black tracking-tight">Chapter Management</h1>
-          <p className="text-zinc-500 font-medium">Upload and manage chapters for your series.</p>
-        </div>
-        {selectedSeries && (
-          <button 
-            onClick={() => { setEditingChapter(null); setIsModalOpen(true); }}
-            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors"
-          >
-            <Plus className="w-5 h-5" /> Add New Chapter
-          </button>
-        )}
-      </div>
-
-      {/* Series Selector */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <div className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm space-y-4">
-          <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Select Series</label>
-          <select 
-            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-            value={selectedSeries?.id || ''}
-            onChange={(e) => setSelectedSeries(seriesList.find(s => s.id === e.target.value) || null)}
-          >
-            <option value="">Choose a series...</option>
-            {seriesList.map(s => (
-              <option key={s.id} value={s.id}>{s.title}</option>
-            ))}
-          </select>
-        </div>
-      </div>
-
-      {selectedSeries ? (
-        <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
-            <h3 className="font-black uppercase tracking-tight">Chapters for {selectedSeries.title}</h3>
-            <span className="text-xs font-bold text-zinc-500">{chapters.length} Chapters total</span>
-          </div>
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-zinc-50 border-b border-zinc-200">
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Number</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Title</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Pages</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Published</th>
-                <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-zinc-100">
-              {chapters.map((chapter) => (
-                <tr key={chapter.id} className="hover:bg-zinc-50 transition-colors">
-                  <td className="px-6 py-4 font-black text-zinc-400">#{chapter.chapterNumber}</td>
-                  <td className="px-6 py-4 font-bold">{chapter.title || 'Untitled'}</td>
-                  <td className="px-6 py-4 text-sm">{chapter.content.length} pages</td>
-                  <td className="px-6 py-4 text-sm">{chapter.publishDate.toDate().toLocaleDateString()}</td>
-                  <td className="px-6 py-4">
-                    <div className="flex items-center gap-2">
-                      <button 
-                        onClick={() => { 
-                          setEditingChapter(chapter); 
-                          setFormData({
-                            chapterNumber: chapter.chapterNumber,
-                            title: chapter.title || '',
-                            content: chapter.content,
-                            publishDate: chapter.publishDate.toDate().toISOString().split('T')[0]
-                          }); 
-                          setIsModalOpen(true); 
-                        }}
-                        className="p-2 text-zinc-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg transition-colors"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button 
-                        onClick={() => handleDelete(chapter.id)}
-                        className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="p-20 bg-zinc-100 rounded-[3rem] border-4 border-dashed border-zinc-200 flex flex-col items-center justify-center text-center">
-          <Layers className="w-16 h-16 text-zinc-300 mb-4" />
-          <h3 className="text-xl font-black text-zinc-400">Select a series to manage chapters</h3>
-        </div>
-      )}
-
-      {/* Modal */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-          <div className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] shadow-2xl">
-            <div className="p-8 border-b border-zinc-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <h2 className="text-2xl font-black uppercase tracking-tight">{editingChapter ? 'Edit Chapter' : 'Add New Chapter'}</h2>
-              <button onClick={() => setIsModalOpen(false)} className="p-2 text-zinc-400 hover:bg-zinc-100 rounded-full">
-                <X className="w-6 h-6" />
-              </button>
+    <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A]">
+      {/* Header */}
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-8 py-4">
+        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div>
+              <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
+                <Layers className="w-6 h-6 text-emerald-500" />
+                Chapter Management
+              </h1>
+              <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">Admin Control Panel</p>
             </div>
-            <form onSubmit={handleSubmit} className="p-8 space-y-8">
-              <div className="grid md:grid-cols-3 gap-8">
-                <div className="space-y-6">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Chapter Number</label>
-                    <input 
-                      type="number" 
-                      required
-                      step="0.1"
-                      value={formData.chapterNumber}
-                      onChange={e => setFormData({...formData, chapterNumber: Number(e.target.value)})}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Title (Optional)</label>
-                    <input 
-                      type="text" 
-                      value={formData.title}
-                      onChange={e => setFormData({...formData, title: e.target.value})}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Publish Date</label>
-                    <input 
-                      type="date" 
-                      required
-                      value={formData.publishDate}
-                      onChange={e => setFormData({...formData, publishDate: e.target.value})}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                    />
-                  </div>
-                </div>
-                <div className="md:col-span-2 space-y-6">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500">Chapter Content (Pages)</label>
-                    <div className="flex flex-wrap gap-4">
-                      <label className="text-xs font-bold text-blue-600 flex items-center gap-1 hover:underline cursor-pointer">
-                        <Upload className="w-3 h-3" /> Upload Files
-                        <input 
-                          type="file" 
-                          multiple 
-                          accept="image/*" 
-                          className="hidden" 
-                          onChange={handleFileUpload}
-                        />
-                      </label>
-                      <button 
-                        type="button"
-                        onClick={() => setIsBulkModalOpen(true)}
-                        className="text-xs font-bold text-purple-600 flex items-center gap-1 hover:underline"
-                      >
-                        <Layers className="w-3 h-3" /> Bulk Add URLs
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleAddImage}
-                        className="text-xs font-bold text-emerald-600 flex items-center gap-1 hover:underline"
-                      >
-                        <Plus className="w-3 h-3" /> Add Page
-                      </button>
-                    </div>
-                  </div>
+            
+            <div className="h-8 w-px bg-zinc-200 mx-2" />
 
-                  {/* Scrape Input */}
-                  <div className="flex gap-2">
-                    <input 
-                      type="text"
-                      placeholder="Paste chapter URL to scrape images..."
-                      value={scrapeUrl}
-                      onChange={e => setScrapeUrl(e.target.value)}
-                      className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm outline-none focus:border-emerald-500/50"
-                    />
+            <div className="flex items-center gap-3">
+              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Active Series</span>
+              <select 
+                className="bg-zinc-100 border-none rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none min-w-[240px]"
+                value={selectedSeries?.id || ''}
+                onChange={(e) => setSelectedSeries(seriesList.find(s => s.id === e.target.value) || null)}
+              >
+                <option value="">Select a series...</option>
+                {seriesList.map(s => (
+                  <option key={s.id} value={s.id}>{s.title}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {selectedSeries && !isEditorOpen && (
+              <motion.button 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                onClick={() => openEditor()}
+                className="bg-emerald-500 text-black px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
+              >
+                <Plus className="w-4 h-4" /> New Chapter
+              </motion.button>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[1600px] mx-auto p-8">
+        <AnimatePresence mode="wait">
+          {!selectedSeries ? (
+            <motion.div 
+              key="empty"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="flex flex-col items-center justify-center py-32 text-center"
+            >
+              <div className="w-24 h-24 bg-zinc-100 rounded-full flex items-center justify-center mb-6">
+                <Layers className="w-10 h-10 text-zinc-300" />
+              </div>
+              <h2 className="text-2xl font-black text-zinc-400">No Series Selected</h2>
+              <p className="text-zinc-500 mt-2 max-w-md">Please select a series from the dropdown above to start managing its chapters.</p>
+            </motion.div>
+          ) : isEditorOpen ? (
+            <motion.div 
+              key="editor"
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -20 }}
+              className="grid grid-cols-1 lg:grid-cols-12 gap-8"
+            >
+              {/* Editor Sidebar */}
+              <div className="lg:col-span-4 space-y-6">
+                <div className="bg-white p-8 rounded-[2rem] border border-zinc-200 shadow-sm space-y-8">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-xl font-black uppercase tracking-tight">Chapter Details</h3>
                     <button 
-                      type="button"
-                      onClick={handleScrape}
-                      disabled={isScraping || !scrapeUrl}
-                      className="px-4 py-2 bg-zinc-900 text-white text-xs font-bold rounded-xl hover:bg-zinc-800 disabled:opacity-50 transition-colors"
+                      onClick={() => setIsEditorOpen(false)}
+                      className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
                     >
-                      {isScraping ? 'Scraping...' : 'Scrape'}
+                      <X className="w-5 h-5" />
                     </button>
                   </div>
 
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                    {formData.content.map((url, index) => (
-                      <div key={index} className="flex gap-2 group">
-                        <div className="w-8 h-10 bg-zinc-100 rounded flex items-center justify-center text-[10px] font-bold text-zinc-400 flex-shrink-0">
-                          {index + 1}
-                        </div>
-                        <div className="flex-1 relative">
-                          <input 
-                            type="text" 
-                            placeholder="Image URL or Base64"
-                            value={url}
-                            onChange={e => handleImageChange(index, e.target.value)}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-2 text-sm outline-none"
-                          />
-                          {url.startsWith('data:image') && (
-                            <span className="absolute right-3 top-1/2 -translate-y-1/2 px-2 py-0.5 bg-blue-100 text-blue-600 text-[8px] font-black uppercase rounded">File</span>
-                          )}
-                        </div>
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Chapter Number</label>
+                      <input 
+                        type="number" 
+                        step="0.1"
+                        value={formData.chapterNumber}
+                        onChange={e => setFormData(prev => ({ ...prev, chapterNumber: Number(e.target.value) }))}
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Title (Optional)</label>
+                      <input 
+                        type="text" 
+                        value={formData.title}
+                        onChange={e => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                        placeholder="e.g. The Beginning of the End"
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Publish Date</label>
+                      <input 
+                        type="date" 
+                        value={formData.publishDate}
+                        onChange={e => setFormData(prev => ({ ...prev, publishDate: e.target.value }))}
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 font-bold outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="pt-6 border-t border-zinc-100 flex flex-col gap-3">
+                    <button 
+                      onClick={(e) => handleSubmit(e, false)}
+                      disabled={isSaving || isUploading}
+                      className="w-full bg-black text-white py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-zinc-800 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                    >
+                      {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                      {editingChapter ? 'Update Chapter' : 'Save & Close'}
+                    </button>
+                    {!editingChapter && (
+                      <button 
+                        onClick={(e) => handleSubmit(e, true)}
+                        disabled={isSaving || isUploading}
+                        className="w-full bg-emerald-500 text-black py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-emerald-400 transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                      >
+                        {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        Save & Continue
+                      </button>
+                    )}
+                    <button 
+                      onClick={() => setIsEditorOpen(false)}
+                      className="w-full bg-zinc-100 text-zinc-500 py-4 rounded-2xl font-black uppercase tracking-widest text-xs hover:bg-zinc-200 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+
+                {/* Status Card */}
+                {(isUploading || isExtracting || error || success || failedUploads.length > 0) && (
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={cn(
+                      "p-6 rounded-[2rem] border shadow-sm",
+                      error || failedUploads.length > 0 ? "bg-red-50 border-red-100 text-red-600" : 
+                      success ? "bg-emerald-50 border-emerald-100 text-emerald-600" :
+                      "bg-blue-50 border-blue-100 text-blue-600"
+                    )}
+                  >
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        {error || failedUploads.length > 0 ? <AlertCircle className="w-5 h-5" /> : 
+                         success ? <Check className="w-5 h-5" /> :
+                         <Loader2 className="w-5 h-5 animate-spin" />}
+                        <span className="text-sm font-black uppercase tracking-tight">
+                          {error || failedUploads.length > 0 ? 'Upload Issues' : success ? 'Success' : 'Processing...'}
+                        </span>
+                      </div>
+                      {failedUploads.length > 0 && (
                         <button 
-                          type="button"
-                          onClick={() => handleRemoveImage(index)}
-                          className="p-2 text-zinc-400 hover:text-red-500"
+                          onClick={() => setFailedUploads([])}
+                          className="text-[10px] font-black uppercase tracking-widest hover:underline"
+                        >
+                          Clear
+                        </button>
+                      )}
+                    </div>
+                    
+                    {error && <p className="text-xs font-medium leading-relaxed mb-2">{error}</p>}
+                    {success && <p className="text-xs font-medium leading-relaxed">{success}</p>}
+                    
+                    {failedUploads.length > 0 && (
+                      <div className="space-y-2 mt-2 max-h-[200px] overflow-y-auto pr-2 custom-scrollbar">
+                        {failedUploads.map((fail, i) => (
+                          <div key={i} className="p-3 bg-white/50 rounded-xl border border-red-100">
+                            <p className="text-[10px] font-black uppercase tracking-tight truncate">{fail.name}</p>
+                            <p className="text-[9px] font-medium opacity-80 mt-1">{fail.error}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {isUploading && (
+                      <div className="space-y-3 mt-4">
+                        <div className="flex justify-between items-end">
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-70">
+                            Overall Progress
+                          </p>
+                          <p className="text-[10px] font-black">
+                            {completedFilesCount} / {totalFilesToUpload}
+                          </p>
+                        </div>
+                        <div className="h-2 bg-blue-200 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-blue-600 transition-all duration-500" 
+                            style={{ width: `${(completedFilesCount / totalFilesToUpload) * 100}%` }} 
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Main Editor Area */}
+              <div 
+                className="lg:col-span-8 space-y-6 relative"
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setIsDragging(true);
+                }}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setIsDragging(false);
+                  const files = Array.from(e.dataTransfer.files);
+                  const zipFile = files.find(f => f.name.endsWith('.zip'));
+                  if (zipFile) {
+                    const mockEvent = { target: { files: [zipFile] } } as any;
+                    handleZipUpload(mockEvent);
+                  } else {
+                    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+                    if (imageFiles.length > 0) uploadFiles(imageFiles);
+                  }
+                }}
+              >
+                <AnimatePresence>
+                  {isDragging && (
+                    <motion.div 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="absolute inset-0 z-50 bg-emerald-500/10 backdrop-blur-sm border-4 border-dashed border-emerald-500 rounded-[2rem] flex items-center justify-center"
+                    >
+                      <div className="bg-white p-8 rounded-3xl shadow-2xl flex flex-col items-center gap-4">
+                        <Upload className="w-12 h-12 text-emerald-500 animate-bounce" />
+                        <p className="text-xl font-black uppercase tracking-tight">Drop to Upload</p>
+                        <p className="text-sm font-medium text-zinc-500">Images or ZIP files supported</p>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <div className="bg-white p-8 rounded-[2rem] border border-zinc-200 shadow-sm min-h-[600px]">
+                  <div className="flex items-center justify-between mb-8">
+                    <div>
+                      <h3 className="text-xl font-black uppercase tracking-tight">
+                        {selectedSeries.type === 'Novel' ? 'Chapter Content' : 'Chapter Pages'}
+                      </h3>
+                      <p className="text-xs font-medium text-zinc-500 mt-1">
+                        {selectedSeries.type === 'Novel' ? 'Write or paste your chapter text below.' : 'Upload images or ZIP files to add pages.'}
+                      </p>
+                    </div>
+
+                    {selectedSeries.type !== 'Novel' && (
+                      <div className="flex items-center gap-2">
+                        <button 
+                          onClick={() => {
+                            const newContent = [...formData.content].sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+                            setFormData(prev => ({ ...prev, content: newContent }));
+                          }}
+                          className="p-2 hover:bg-zinc-100 rounded-xl transition-colors text-zinc-500"
+                          title="Sort Pages"
+                        >
+                          <RefreshCw className="w-5 h-5" />
+                        </button>
+                        <button 
+                          onClick={() => {
+                            if (confirm("Clear all pages?")) setFormData(prev => ({ ...prev, content: [] }));
+                          }}
+                          className="p-2 hover:bg-red-50 rounded-xl transition-colors text-red-400"
+                          title="Clear All"
+                        >
+                          <Trash2 className="w-5 h-5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {selectedSeries.type === 'Novel' ? (
+                    <div className="space-y-4">
+                      <textarea 
+                        value={formData.content[0] || ''}
+                        onChange={e => setFormData(prev => ({ ...prev, content: [e.target.value] }))}
+                        placeholder="Once upon a time..."
+                        className="w-full min-h-[500px] bg-zinc-50 border border-zinc-200 rounded-3xl p-8 text-lg font-serif leading-relaxed outline-none focus:ring-4 focus:ring-emerald-500/5 resize-none"
+                      />
+                      <div className="flex justify-between items-center px-4">
+                        <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">
+                          Word Count: {formData.content[0]?.split(/\s+/).filter(Boolean).length || 0}
+                        </span>
+                        <div className="flex items-center gap-2 text-zinc-400">
+                          <Type className="w-4 h-4" />
+                          <span className="text-[10px] font-black uppercase tracking-widest">Rich Text Supported</span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-8">
+                      {/* Upload Zones */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div 
+                          onClick={() => fileInputRef.current?.click()}
+                          className="group relative border-2 border-dashed border-zinc-200 rounded-[2rem] p-8 flex flex-col items-center justify-center gap-4 hover:border-blue-500 hover:bg-blue-50/50 transition-all cursor-pointer"
+                        >
+                          <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <Upload className="w-6 h-6" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-black uppercase tracking-tight">Upload Images</p>
+                            <p className="text-[10px] font-medium text-zinc-400 mt-1 uppercase tracking-widest">JPG, PNG, WEBP, etc.</p>
+                          </div>
+                          <input type="file" multiple accept="image/*" className="hidden" ref={fileInputRef} onChange={handleFileUpload} />
+                        </div>
+
+                        <div 
+                          onClick={() => zipInputRef.current?.click()}
+                          className="group relative border-2 border-dashed border-zinc-200 rounded-[2rem] p-8 flex flex-col items-center justify-center gap-4 hover:border-emerald-500 hover:bg-emerald-50/50 transition-all cursor-pointer"
+                        >
+                          <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-2xl flex items-center justify-center group-hover:scale-110 transition-transform">
+                            <FileArchive className="w-6 h-6" />
+                          </div>
+                          <div className="text-center">
+                            <p className="text-sm font-black uppercase tracking-tight">Upload ZIP</p>
+                            <p className="text-[10px] font-medium text-zinc-400 mt-1 uppercase tracking-widest">Auto-extract images</p>
+                          </div>
+                          <input type="file" accept=".zip" className="hidden" ref={zipInputRef} onChange={handleZipUpload} />
+                        </div>
+                      </div>
+
+                      {/* Page Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {formData.content.map((url, index) => (
+                          <motion.div 
+                            layout
+                            key={`${url}-${index}`}
+                            className="group relative aspect-[3/4] bg-zinc-100 rounded-2xl border border-zinc-200 overflow-hidden shadow-sm hover:shadow-md transition-all"
+                          >
+                            {url && !url.startsWith('uploading-') ? (
+                              <img src={url} className="w-full h-full object-cover" alt={`Page ${index + 1}`} referrerPolicy="no-referrer" />
+                            ) : (
+                              <div className="w-full h-full flex flex-col items-center justify-center gap-2 bg-zinc-50">
+                                <Loader2 className="w-6 h-6 text-blue-400 animate-spin" />
+                                <span className="text-[10px] font-black text-blue-400 uppercase tracking-widest">
+                                  Uploading...
+                                </span>
+                              </div>
+                            )}
+
+                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3">
+                              <div className="flex items-center gap-2">
+                                <button 
+                                  onClick={() => {
+                                    const newContent = [...formData.content];
+                                    const target = index - 1;
+                                    if (target >= 0) {
+                                      [newContent[index], newContent[target]] = [newContent[target], newContent[index]];
+                                      setFormData(prev => ({ ...prev, content: newContent }));
+                                    }
+                                  }}
+                                  className="p-2 bg-white/20 hover:bg-white/40 rounded-lg text-white transition-colors"
+                                >
+                                  <ArrowUp className="w-4 h-4" />
+                                </button>
+                                <button 
+                                  onClick={() => {
+                                    const newContent = [...formData.content];
+                                    const target = index + 1;
+                                    if (target < newContent.length) {
+                                      [newContent[index], newContent[target]] = [newContent[target], newContent[index]];
+                                      setFormData(prev => ({ ...prev, content: newContent }));
+                                    }
+                                  }}
+                                  className="p-2 bg-white/20 hover:bg-white/40 rounded-lg text-white transition-colors"
+                                >
+                                  <ArrowDown className="w-4 h-4" />
+                                </button>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  setFormData(prev => ({ ...prev, content: prev.content.filter((_, i) => i !== index) }));
+                                }}
+                                className="px-4 py-2 bg-red-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg hover:bg-red-600 transition-colors"
+                              >
+                                Remove
+                              </button>
+                            </div>
+
+                            <div className="absolute top-3 left-3 px-2 py-1 bg-black/50 backdrop-blur-md rounded-lg text-[8px] font-black text-white uppercase tracking-widest">
+                              Page {index + 1}
+                            </div>
+                          </motion.div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </motion.div>
+          ) : (
+            <motion.div 
+              key="list"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="space-y-8"
+            >
+              {/* List Header */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div>
+                  <h2 className="text-3xl font-black tracking-tight">{selectedSeries.title}</h2>
+                  <p className="text-zinc-500 font-medium mt-1">Manage {chapters.length} chapters for this series.</p>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+                    <input 
+                      type="text" 
+                      placeholder="Search chapters..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                      className="bg-white border border-zinc-200 rounded-2xl pl-12 pr-6 py-3 text-sm font-medium outline-none focus:ring-4 focus:ring-emerald-500/5 w-full md:w-80"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Chapter Grid */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {filteredChapters.map((chapter) => (
+                  <motion.div 
+                    layout
+                    key={chapter.id}
+                    className="group bg-white p-6 rounded-[2.5rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
+                  >
+                    <div className="flex items-start justify-between mb-6">
+                      <div className="w-14 h-14 bg-zinc-100 rounded-2xl flex items-center justify-center text-xl font-black text-zinc-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-colors">
+                        #{chapter.chapterNumber}
+                      </div>
+                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button 
+                          onClick={() => openEditor(chapter)}
+                          className="p-2 hover:bg-blue-50 text-zinc-400 hover:text-blue-500 rounded-xl transition-all"
+                        >
+                          <Edit2 className="w-4 h-4" />
+                        </button>
+                        <button 
+                          onClick={() => handleDelete(chapter.id)}
+                          className="p-2 hover:bg-red-50 text-zinc-400 hover:text-red-500 rounded-xl transition-all"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                    ))}
-                    {formData.content.length === 0 && (
-                      <div className="p-12 border-2 border-dashed border-zinc-100 rounded-2xl text-center">
-                        <ImageIcon className="w-8 h-8 text-zinc-200 mx-auto mb-2" />
-                        <p className="text-xs font-bold text-zinc-400">No pages added yet</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+                    </div>
 
-              {/* Bulk Add Modal */}
-              {isBulkModalOpen && (
-                <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-                  <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl p-8 space-y-6">
-                    <div>
-                      <h3 className="text-xl font-black uppercase tracking-tight">Bulk Add URLs</h3>
-                      <p className="text-xs text-zinc-500 font-medium">Paste image URLs separated by new lines.</p>
+                    <div className="space-y-4">
+                      <div>
+                        <h4 className="font-black text-lg truncate">{chapter.title || `Chapter ${chapter.chapterNumber}`}</h4>
+                        <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mt-1">
+                          Published {chapter.publishDate.toDate().toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-4 border-t border-zinc-100">
+                        <div className="flex items-center gap-2">
+                          <ImageIcon className="w-3 h-3 text-zinc-400" />
+                          <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                            {chapter.pageCount ?? chapter.content?.length ?? 0} {selectedSeries.type === 'Novel' ? 'Words' : 'Pages'}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <ExternalLink className="w-3 h-3 text-zinc-400" />
+                          <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">
+                            {chapter.views.toLocaleString()} Views
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <textarea 
-                      rows={10}
-                      value={bulkText}
-                      onChange={e => setBulkText(e.target.value)}
-                      placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg"
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-sm outline-none resize-none font-mono"
-                    />
-                    <div className="flex gap-4">
-                      <button 
-                        type="button"
-                        onClick={() => setIsBulkModalOpen(false)}
-                        className="flex-1 py-3 bg-zinc-100 text-zinc-500 font-bold rounded-xl hover:bg-zinc-200 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button 
-                        type="button"
-                        onClick={handleBulkAdd}
-                        className="flex-1 py-3 bg-black text-white font-bold rounded-xl hover:bg-zinc-800 transition-colors"
-                      >
-                        Add Pages
-                      </button>
-                    </div>
+                  </motion.div>
+                ))}
+
+                <button 
+                  onClick={() => openEditor()}
+                  className="group aspect-square border-4 border-dashed border-zinc-200 rounded-[2.5rem] flex flex-col items-center justify-center gap-4 hover:border-emerald-500 hover:bg-emerald-50/50 transition-all text-zinc-300 hover:text-emerald-500"
+                >
+                  <div className="w-16 h-16 bg-zinc-100 rounded-3xl flex items-center justify-center group-hover:bg-emerald-100 transition-colors">
+                    <Plus className="w-8 h-8" />
                   </div>
-                </div>
-              )}
-              <div className="flex justify-end gap-4 pt-8 border-t border-zinc-100">
-                <button 
-                  type="button" 
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-8 py-3 text-zinc-500 font-bold hover:bg-zinc-100 rounded-2xl transition-colors"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit"
-                  className="px-12 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
-                >
-                  {editingChapter ? 'Update Chapter' : 'Upload Chapter'}
+                  <span className="text-sm font-black uppercase tracking-widest">Add Chapter</span>
                 </button>
               </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </main>
     </div>
   );
 };

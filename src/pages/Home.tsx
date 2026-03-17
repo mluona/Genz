@@ -1,51 +1,42 @@
 import React, { useEffect, useState } from 'react';
-import { collection, query, orderBy, limit, onSnapshot, getDocs, where } from 'firebase/firestore';
+import { collection, query, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Series, Chapter } from '../types';
+import { Series } from '../types';
 import { SeriesCard } from '../components/SeriesCard';
-import { TrendingUp, Clock, Zap, Star, ChevronRight } from 'lucide-react';
+import { RecentlyUpdatedCard } from '../components/RecentlyUpdatedCard';
+import { TrendingUp, Clock, Star, ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { motion } from 'motion/react';
 
 export const Home: React.FC = () => {
-  const [latestChapters, setLatestChapters] = useState<(Chapter & { series?: Series })[]>([]);
+  const [recentlyUpdated, setRecentlyUpdated] = useState<Series[]>([]);
   const [dailyTop, setDailyTop] = useState<Series[]>([]);
   const [weeklyTop, setWeeklyTop] = useState<Series[]>([]);
   const [monthlyTop, setMonthlyTop] = useState<Series[]>([]);
-  const [recentlyUpdated, setRecentlyUpdated] = useState<Series[]>([]);
   const [popularWorks, setPopularWorks] = useState<Series[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Fetch Popular Works
-    const popularQuery = query(collection(db, 'series'), orderBy('rating', 'desc'), limit(6));
-    const unsubscribePopular = onSnapshot(popularQuery, (snapshot) => {
-      setPopularWorks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series)));
-    });
-
-    // Fetch Recently Updated
-    const updatedQuery = query(collection(db, 'series'), orderBy('lastUpdated', 'desc'), limit(12));
-    const unsubscribeUpdated = onSnapshot(updatedQuery, (snapshot) => {
-      setRecentlyUpdated(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series)));
-    });
-
-    // Fetch Top Viewed (Daily/Weekly/Monthly)
+    const recentQuery = query(collection(db, 'series'), orderBy('lastUpdated', 'desc'), limit(10));
     const dailyQuery = query(collection(db, 'series'), orderBy('dailyViews', 'desc'), limit(6));
     const weeklyQuery = query(collection(db, 'series'), orderBy('weeklyViews', 'desc'), limit(6));
     const monthlyQuery = query(collection(db, 'series'), orderBy('monthlyViews', 'desc'), limit(6));
+    const popularQuery = query(collection(db, 'series'), orderBy('rating', 'desc'), limit(6));
 
+    const unsubscribeRecent = onSnapshot(recentQuery, (snapshot) => setRecentlyUpdated(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series))));
     const unsubscribeDaily = onSnapshot(dailyQuery, (snapshot) => setDailyTop(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series))));
     const unsubscribeWeekly = onSnapshot(weeklyQuery, (snapshot) => setWeeklyTop(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series))));
     const unsubscribeMonthly = onSnapshot(monthlyQuery, (snapshot) => setMonthlyTop(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series))));
+    const unsubscribePopular = onSnapshot(popularQuery, (snapshot) => setPopularWorks(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Series))));
 
     setLoading(false);
 
     return () => {
-      unsubscribePopular();
-      unsubscribeUpdated();
+      unsubscribeRecent();
       unsubscribeDaily();
       unsubscribeWeekly();
       unsubscribeMonthly();
+      unsubscribePopular();
     };
   }, []);
 
@@ -58,144 +49,142 @@ export const Home: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white pb-20">
-      {/* Hero / Featured Section */}
-      <section className="relative h-[60vh] overflow-hidden">
+    <div className="min-h-screen bg-zinc-950 text-white pb-20 selection:bg-emerald-500 selection:text-black">
+      <div className="atmosphere" />
+      
+      {/* Hero Section */}
+      <section className="relative min-h-screen overflow-hidden flex items-center justify-center pb-32">
         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-zinc-950/50 to-zinc-950 z-10" />
-        <img
-          src="https://picsum.photos/seed/manga-hero/1920/1080"
+        
+        <motion.img
+          initial={{ scale: 1.1 }}
+          animate={{ scale: 1 }}
+          transition={{ duration: 10, ease: "linear" }}
+          src="https://picsum.photos/seed/manhwa-hero/1920/1080"
           alt="Featured"
-          className="w-full h-full object-cover opacity-40"
+          className="w-full h-full object-cover opacity-30"
           referrerPolicy="no-referrer"
         />
-        <div className="absolute inset-0 z-20 flex flex-col justify-end p-8 sm:p-16 max-w-7xl mx-auto w-full">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-          >
-            <span className="px-3 py-1 bg-emerald-500 text-black text-xs font-black rounded-md uppercase tracking-widest mb-4 inline-block">
-              Featured Today
-            </span>
-            <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-4 max-w-2xl leading-[1.15] sm:leading-[1.05]">
-              EXPLORE THE WORLD OF GENZ
-            </h1>
-            <p className="text-zinc-400 text-lg max-w-xl mb-8 font-medium">
-              Dive into thousands of manga, manhwa, and novels. Updated daily with the latest chapters from your favorite creators.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4">
-              <button className="m3-button-primary flex items-center justify-center gap-2">
-                <Zap className="w-5 h-5" /> Start Reading
-              </button>
-              <button className="m3-button-secondary">
-                Browse All
-              </button>
-            </div>
-          </motion.div>
+        
+        <div className="absolute z-20 text-center px-4 -mt-20">
+          <h1 className="text-5xl sm:text-7xl font-black tracking-tighter mb-10 text-gradient">
+            UNLEASH YOUR <span className="text-emerald-500 italic font-serif">IMAGINATION</span>
+          </h1>
+          <div className="flex gap-4 justify-center">
+            <Link to="/library" className="px-8 py-4 bg-emerald-500 text-black font-black uppercase tracking-widest rounded-full hover:bg-emerald-400 transition-all hover:shadow-[0_0_30px_rgba(16,185,129,0.3)] hover:-translate-y-1">
+              Start Reading
+            </Link>
+          </div>
+        </div>
+
+        {/* Floating Pages Marquee */}
+        <div className="absolute bottom-0 left-0 right-0 z-20 overflow-hidden py-12 pointer-events-none">
+          <div className="flex gap-6 animate-marquee hover:[animation-play-state:paused] whitespace-nowrap opacity-80">
+            {[...popularWorks, ...popularWorks].map((series, i) => (
+              <motion.div
+                key={`r1-${series.id}-${i}`}
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 4, repeat: Infinity, delay: i * 0.2, ease: "easeInOut" }}
+                className="shrink-0 pointer-events-auto"
+              >
+                <Link 
+                  to={`/series/${series.slug}`}
+                  className="inline-flex items-center gap-4 bg-zinc-900/80 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 hover:border-emerald-500/50 hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all group"
+                >
+                  <img 
+                    src={series.coverImage || undefined} 
+                    className="w-12 h-16 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" 
+                    alt="" 
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Popular #{ (i % popularWorks.length) + 1 }</p>
+                    <p className="font-bold text-sm text-white">{series.title}</p>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
+          <div className="flex gap-6 animate-marquee-reverse hover:[animation-play-state:paused] whitespace-nowrap mt-6 opacity-80">
+            {[...recentlyUpdated, ...recentlyUpdated].map((series, i) => (
+              <motion.div
+                key={`r2-${series.id}-${i}`}
+                animate={{ y: [0, -10, 0] }}
+                transition={{ duration: 5, repeat: Infinity, delay: i * 0.3, ease: "easeInOut" }}
+                className="shrink-0 pointer-events-auto"
+              >
+                <Link 
+                  to={`/series/${series.slug}`}
+                  className="inline-flex items-center gap-4 bg-zinc-900/80 backdrop-blur-md px-6 py-3 rounded-2xl border border-white/10 hover:border-emerald-500/50 hover:shadow-[0_0_20px_rgba(16,185,129,0.2)] transition-all group"
+                >
+                  <img 
+                    src={series.coverImage || undefined} 
+                    className="w-12 h-16 object-cover rounded-lg shadow-lg group-hover:scale-105 transition-transform" 
+                    alt="" 
+                    referrerPolicy="no-referrer"
+                  />
+                  <div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-blue-500">Updated</p>
+                    <p className="font-bold text-sm text-white">{series.title}</p>
+                  </div>
+                </Link>
+              </motion.div>
+            ))}
+          </div>
         </div>
       </section>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 -mt-12 relative z-30 space-y-16 sm:space-y-24">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-30 space-y-24 mt-12">
         
-        {/* Latest Chapters */}
+        {/* Recently Updated */}
         <section>
-          <div className="flex items-center justify-between mb-6 sm:mb-8">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="p-1.5 sm:p-2 bg-emerald-500/10 rounded-lg">
-                <Zap className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
-              </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase">Latest Releases</h2>
+          <div className="flex items-center justify-between mb-8">
+            <div className="flex items-center gap-3">
+              <Clock className="w-6 h-6 text-emerald-500" />
+              <h2 className="text-2xl font-black uppercase tracking-tight">Recently Updated</h2>
             </div>
-            <Link to="/latest" className="text-xs sm:text-sm font-bold text-zinc-500 hover:text-white flex items-center gap-1 transition-colors">
+            <Link to="/library" className="flex items-center gap-1 text-sm font-bold text-zinc-400 hover:text-emerald-500 transition-colors">
               View All <ChevronRight className="w-4 h-4" />
             </Link>
           </div>
-          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 sm:gap-6">
-            {recentlyUpdated.slice(0, 6).map((series) => (
-              <SeriesCard key={series.id} series={series} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6">
+            {recentlyUpdated.slice(0, 10).map((series) => (
+              <RecentlyUpdatedCard key={series.id} series={series} />
             ))}
           </div>
         </section>
 
         {/* Top Viewed Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 sm:gap-12">
-          {/* Daily Top */}
-          <div className="space-y-6 sm:space-y-8">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
-              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Daily Top</h2>
-            </div>
-            <div className="space-y-4">
-              {dailyTop.map((series, i) => (
-                <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
-                  <SeriesCard series={series} compact />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Weekly Top */}
-          <div className="space-y-6 sm:space-y-8">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
-              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Weekly Top</h2>
-            </div>
-            <div className="space-y-4">
-              {weeklyTop.map((series, i) => (
-                <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
-                  <SeriesCard series={series} compact />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Monthly Top */}
-          <div className="space-y-6 sm:space-y-8">
-            <div className="flex items-center gap-3">
-              <TrendingUp className="w-5 h-5 sm:w-6 sm:h-6 text-purple-500" />
-              <h2 className="text-lg sm:text-xl font-black tracking-tight uppercase">Monthly Top</h2>
-            </div>
-            <div className="space-y-4">
-              {monthlyTop.map((series, i) => (
-                <div key={series.id} className="flex items-center gap-4">
-                  <span className="text-2xl sm:text-3xl font-black text-zinc-800 w-6 sm:w-8">{i + 1}</span>
-                  <SeriesCard series={series} compact />
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        {/* Recently Updated Series */}
-        <section>
-          <div className="flex items-center justify-between mb-6 sm:mb-8">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="p-1.5 sm:p-2 bg-blue-500/10 rounded-lg">
-                <Clock className="w-5 h-5 sm:w-6 sm:h-6 text-blue-500" />
+        <section className="grid grid-cols-1 md:grid-cols-3 gap-12">
+          {[{ title: 'Daily Top', data: dailyTop, color: 'text-emerald-500' }, 
+            { title: 'Weekly Top', data: weeklyTop, color: 'text-blue-500' }, 
+            { title: 'Monthly Top', data: monthlyTop, color: 'text-purple-500' }].map(section => (
+            <div key={section.title} className="space-y-6 bg-zinc-900/30 p-6 rounded-3xl border border-white/5 hover:border-white/10 transition-colors">
+              <div className="flex items-center gap-3">
+                <TrendingUp className={`w-6 h-6 ${section.color}`} />
+                <h2 className="text-xl font-black uppercase tracking-tight">{section.title}</h2>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black tracking-tight uppercase">Recently Updated</h2>
+              <div className="space-y-4">
+                {section.data.map((series, i) => (
+                  <div key={series.id} className="flex items-center gap-4 group">
+                    <span className={`text-3xl font-black w-8 transition-colors ${i === 0 ? section.color : 'text-zinc-800 group-hover:text-zinc-600'}`}>
+                      {i + 1}
+                    </span>
+                    <SeriesCard series={series} compact />
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4 sm:gap-6">
-            {recentlyUpdated.map((series) => (
-              <SeriesCard key={series.id} series={series} />
-            ))}
-          </div>
+          ))}
         </section>
 
         {/* Popular Works */}
-        <section className="bg-zinc-900/50 border border-white/5 rounded-[1.5rem] sm:rounded-[2rem] p-6 sm:p-12">
-          <div className="flex items-center justify-between mb-8 sm:mb-12">
-            <div className="flex items-center gap-2 sm:gap-3">
-              <div className="p-1.5 sm:p-2 bg-yellow-500/10 rounded-lg">
-                <Star className="w-5 h-5 sm:w-6 sm:h-6 text-yellow-500" />
-              </div>
-              <h2 className="text-2xl sm:text-3xl font-black tracking-tight uppercase">Popular Works</h2>
-            </div>
+        <section className="bg-zinc-900/50 border border-white/5 rounded-[3rem] p-8 md:p-12 hover:border-white/10 transition-colors">
+          <div className="flex items-center gap-3 mb-12">
+            <Star className="w-6 h-6 text-yellow-500" />
+            <h2 className="text-3xl font-black uppercase tracking-tight">Popular Works</h2>
           </div>
-          <div className="grid grid-cols-2 xs:grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-6 sm:gap-8">
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-6">
             {popularWorks.map((series) => (
               <SeriesCard key={series.id} series={series} />
             ))}
@@ -206,3 +195,4 @@ export const Home: React.FC = () => {
     </div>
   );
 };
+

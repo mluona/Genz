@@ -1,15 +1,26 @@
 import React, { useEffect, useState } from 'react';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, setDoc } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, setDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Series, SeriesType, SeriesStatus } from '../../types';
-import { Plus, Edit2, Trash2, Search, Filter, X, Upload } from 'lucide-react';
+import { Plus, Edit2, Trash2, Search, Filter, X, Upload, Loader2 } from 'lucide-react';
+import { compressImage } from '../../utils/imageCompression';
+
+const GENRES = [
+  'Action', 'Adventure', 'Comedy', 'Drama', 'Fantasy', 
+  'Horror', 'Mystery', 'Psychological', 'Romance', 
+  'Sci-Fi', 'Slice of Life', 'Sports', 'Supernatural', 'Thriller'
+];
 
 export const SeriesManagement: React.FC = () => {
   const [seriesList, setSeriesList] = useState<Series[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [typeFilter, setTypeFilter] = useState<SeriesType | 'all'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSeries, setEditingSeries] = useState<Series | null>(null);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [seriesToDelete, setSeriesToDelete] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -25,11 +36,56 @@ export const SeriesManagement: React.FC = () => {
   });
 
   useEffect(() => {
-    const unsubscribe = onSnapshot(collection(db, 'series'), (snapshot) => {
+    const q = query(collection(db, 'series'), orderBy('lastUpdated', 'desc'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
       setSeriesList(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Series)));
     });
     return () => unsubscribe();
   }, []);
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadProgress(0);
+    
+    try {
+      console.log(`Starting cover compression for: ${file.name}`, {
+        size: (file.size / 1024).toFixed(2) + ' KB',
+        type: file.type
+      });
+
+      // Compress image to ensure it's under 1MB (0.9MB target)
+      const base64Image = await compressImage(file, 0.9);
+      
+      console.log(`Successfully compressed cover: ${file.name}`);
+      
+      setFormData(prev => ({ ...prev, coverImage: base64Image }));
+      setUploadProgress(100);
+      
+      // Automatically save to database if editing an existing series
+      if (editingSeries) {
+        await updateDoc(doc(db, 'series', editingSeries.id), {
+          coverImage: base64Image,
+          lastUpdated: Timestamp.now()
+        });
+      }
+    } catch (error: any) {
+      console.error("Upload failed:", error);
+      alert(`Upload failed: ${error.message}`);
+    } finally {
+      setIsUploading(false);
+      setTimeout(() => setUploadProgress(0), 1000);
+    }
+  };
+
+  const filteredSeries = seriesList.filter(s => {
+    const matchesSearch = s.title.toLowerCase().includes(searchTerm.toLowerCase()) || 
+                         s.author?.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesType = typeFilter === 'all' || s.type === typeFilter;
+    return matchesSearch && matchesType;
+  });
 
   const generateSlug = (title: string) => {
     return title.toLowerCase().trim().replace(/[^\w\s-]/g, '').replace(/[\s_-]+/g, '-').replace(/^-+|-+$/g, '');
@@ -104,12 +160,37 @@ export const SeriesManagement: React.FC = () => {
           <h1 className="text-3xl font-black tracking-tight">Series Management</h1>
           <p className="text-zinc-500 font-medium">Add, edit, and manage all reading works on GENZ.</p>
         </div>
-        <button 
-          onClick={() => { setEditingSeries(null); setIsModalOpen(true); }}
-          className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors"
-        >
-          <Plus className="w-5 h-5" /> Add New Series
-        </button>
+        <div className="flex gap-4">
+          <div className="relative">
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <select 
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value as any)}
+              className="bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-8 text-sm outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20"
+            >
+              <option value="all">All Types</option>
+              <option value="Manga">Manga</option>
+              <option value="Manhwa">Manhwa</option>
+              <option value="Novel">Novel</option>
+            </select>
+          </div>
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
+            <input 
+              type="text" 
+              placeholder="Search series..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-4 text-sm w-64 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+            />
+          </div>
+          <button 
+            onClick={() => { setEditingSeries(null); setIsModalOpen(true); }}
+            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors"
+          >
+            <Plus className="w-5 h-5" /> Add New Series
+          </button>
+        </div>
       </div>
 
       {/* Series Table */}
@@ -125,11 +206,11 @@ export const SeriesManagement: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-zinc-100">
-            {seriesList.map((series) => (
+            {filteredSeries.map((series) => (
               <tr key={series.id} className="hover:bg-zinc-50 transition-colors">
                 <td className="px-6 py-4">
                   <div className="flex items-center gap-4">
-                    <img src={series.coverImage} className="w-10 h-14 object-cover rounded-lg" alt="" />
+                    <img src={series.coverImage || undefined} className="w-10 h-14 object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
                     <div>
                       <p className="font-bold">{series.title}</p>
                       <p className="text-xs text-zinc-500">{series.author}</p>
@@ -238,43 +319,56 @@ export const SeriesManagement: React.FC = () => {
                       className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-emerald-500/20 outline-none resize-none"
                     />
                   </div>
+                  <div>
+                    <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Genres</label>
+                    <div className="flex flex-wrap gap-2">
+                      {GENRES.map(genre => (
+                        <button
+                          key={genre}
+                          type="button"
+                          onClick={() => {
+                            const newGenres = formData.genres.includes(genre)
+                              ? formData.genres.filter(g => g !== genre)
+                              : [...formData.genres, genre];
+                            setFormData({...formData, genres: newGenres});
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${formData.genres.includes(genre) ? 'bg-emerald-500 text-black' : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200'}`}
+                        >
+                          {genre}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
                 <div className="space-y-6">
                   <div>
                     <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Cover Image</label>
                     <div className="flex flex-col gap-4">
                       <div className="flex gap-4">
-                        <input 
-                          type="text" 
-                          placeholder="Image URL"
-                          value={formData.coverImage}
-                          onChange={e => setFormData({...formData, coverImage: e.target.value})}
-                          className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
-                        />
-                        <label className="p-3 bg-zinc-100 rounded-2xl text-zinc-500 hover:bg-zinc-200 cursor-pointer transition-colors">
-                          <Upload className="w-5 h-5" />
+                        <div className="flex-1 bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 text-zinc-400 text-sm flex items-center truncate">
+                          {formData.coverImage ? 'Image uploaded' : 'No image uploaded'}
+                        </div>
+                        <label className="p-3 bg-zinc-100 rounded-2xl text-zinc-500 hover:bg-zinc-200 cursor-pointer transition-colors relative">
+                          {isUploading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
                           <input 
                             type="file" 
                             className="hidden" 
                             accept="image/*"
-                            onChange={async (e) => {
-                              const file = e.target.files?.[0];
-                              if (file) {
-                                const reader = new FileReader();
-                                reader.onloadend = () => {
-                                  setFormData({...formData, coverImage: reader.result as string});
-                                };
-                                reader.readAsDataURL(file);
-                              }
-                            }}
+                            disabled={isUploading}
+                            onChange={handleFileUpload}
                           />
                         </label>
                       </div>
-                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Or upload a file from your device</p>
+                      {isUploading && (
+                        <div className="h-1 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className="h-full bg-emerald-500 animate-pulse" style={{ width: '100%' }} />
+                        </div>
+                      )}
+                      <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Upload a file from your device</p>
                     </div>
                     {formData.coverImage && (
                       <div className="relative mt-4 w-32 h-44 group">
-                        <img src={formData.coverImage} className="w-full h-full object-cover rounded-2xl border border-zinc-200 shadow-lg" alt="Preview" />
+                        <img src={formData.coverImage || undefined} className="w-full h-full object-cover rounded-2xl border border-zinc-200 shadow-lg" alt="Preview" referrerPolicy="no-referrer" />
                         <button 
                           type="button"
                           onClick={() => setFormData({...formData, coverImage: ''})}
@@ -302,6 +396,27 @@ export const SeriesManagement: React.FC = () => {
                         value={formData.artist}
                         onChange={e => setFormData({...formData, artist: e.target.value})}
                         className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Release Year</label>
+                      <input 
+                        type="number" 
+                        value={formData.releaseYear}
+                        onChange={e => setFormData({...formData, releaseYear: parseInt(e.target.value)})}
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-2">Tags (comma separated)</label>
+                      <input 
+                        type="text" 
+                        value={formData.tags.join(', ')}
+                        onChange={e => setFormData({...formData, tags: e.target.value.split(',').map(t => t.trim()).filter(t => t !== '')})}
+                        className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 outline-none"
+                        placeholder="action, fantasy, magic"
                       />
                     </div>
                   </div>

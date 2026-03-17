@@ -32,6 +32,7 @@ export interface Chapter {
   chapterNumber: number;
   title: string;
   content: string[]; // URLs for images, text for novels
+  pageCount?: number;
   publishDate: Timestamp;
   views: number;
   teamId?: string;
@@ -48,6 +49,7 @@ export interface UserProfile {
   history: { seriesId: string; lastChapterId: string; timestamp: Timestamp }[];
   bookmarks: string[]; // Chapter IDs
   banned: boolean;
+  createdAt?: Timestamp;
 }
 
 export interface Comment {
@@ -61,6 +63,7 @@ export interface Comment {
   likes: number;
   parentId?: string;
   timestamp: Timestamp;
+  isFlagged?: boolean;
 }
 
 export interface Team {

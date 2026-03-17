@@ -15,7 +15,7 @@ export const SeriesCard: React.FC<Props> = ({ series, compact = false }) => {
       <Link to={`/series/${series.slug}`} className="group flex gap-3 p-2 hover:bg-white/5 rounded-xl transition-colors">
         <div className="w-16 h-20 flex-shrink-0 relative overflow-hidden rounded-lg">
           <img
-            src={series.coverImage}
+            src={series.coverImage || undefined}
             alt={series.title}
             className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
             referrerPolicy="no-referrer"
@@ -36,7 +36,7 @@ export const SeriesCard: React.FC<Props> = ({ series, compact = false }) => {
     <Link to={`/series/${series.slug}`} className="group relative flex flex-col gap-3">
       <div className="aspect-[3/4] relative overflow-hidden rounded-2xl bg-zinc-900 border border-white/5">
         <img
-          src={series.coverImage}
+          src={series.coverImage || undefined}
           alt={series.title}
           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
           referrerPolicy="no-referrer"
@@ -45,7 +45,7 @@ export const SeriesCard: React.FC<Props> = ({ series, compact = false }) => {
         
         {/* Badges */}
         <div className="absolute top-3 left-3 flex flex-col gap-2">
-          <span className="px-2 py-1 bg-emerald-500 text-[10px] font-black text-black rounded-md uppercase tracking-tighter">
+          <span className={`px-2 py-1 text-[10px] font-black text-white rounded-md uppercase tracking-tighter ${series.type === 'Novel' ? 'bg-blue-500' : 'bg-emerald-500 text-black'}`}>
             {series.type}
           </span>
           {series.status === 'Ongoing' && (

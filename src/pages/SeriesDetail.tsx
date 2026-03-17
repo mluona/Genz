@@ -1,15 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, orderBy, getDocs, where } from 'firebase/firestore';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { doc, onSnapshot, collection, query, orderBy, getDocs, where, Timestamp } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { Series, Chapter, Comment } from '../types';
-import { Star, Eye, Clock, List, MessageSquare, Heart, Share2 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
+import { Star, Eye, Clock, List, MessageSquare, Heart, Share2, BookOpen, ChevronRight, User, Calendar } from 'lucide-react';
+import { formatDistanceToNow, format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
+import { motion } from 'motion/react';
 
 export const SeriesDetail: React.FC = () => {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const { user, profile } = useAuth();
   const [series, setSeries] = useState<Series | null>(null);
   const [chapters, setChapters] = useState<Chapter[]>([]);
@@ -29,7 +31,6 @@ export const SeriesDetail: React.FC = () => {
   useEffect(() => {
     if (!slug) return;
 
-    // Find series by slug
     const seriesQuery = query(collection(db, 'series'), where('slug', '==', slug));
     const unsubscribeSeries = onSnapshot(seriesQuery, (snapshot) => {
       if (!snapshot.empty) {
@@ -51,7 +52,6 @@ export const SeriesDetail: React.FC = () => {
     });
 
     const commentsQuery = query(collection(db, 'comments'), orderBy('timestamp', 'desc'));
-    // Filter comments by seriesId in a real app
     const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
       setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)).filter(c => c.seriesId === series.id));
     });
@@ -66,126 +66,182 @@ export const SeriesDetail: React.FC = () => {
   if (!series) return <div className="min-h-screen bg-zinc-950 text-white flex items-center justify-center">Series not found</div>;
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-white pb-20">
-      {/* Header / Banner */}
-      <div className="relative h-[40vh] overflow-hidden">
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-zinc-950/40 to-transparent z-10" />
-        <img
-          src={series.coverImage}
-          alt={series.title}
-          className="w-full h-full object-cover blur-xl opacity-30 scale-110"
-          referrerPolicy="no-referrer"
-        />
-        <div className="absolute inset-0 z-20 flex items-end max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-          <div className="flex flex-col sm:flex-row gap-8 items-center sm:items-end">
-            <div className="w-48 sm:w-64 aspect-[3/4] rounded-2xl overflow-hidden shadow-2xl border border-white/10 flex-shrink-0">
-              <img src={series.coverImage} alt={series.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-            </div>
-            <div className="flex flex-col gap-4 text-center sm:text-left">
-              <div className="flex flex-wrap gap-2 justify-center sm:justify-start">
-                <span className="px-3 py-1 bg-emerald-500 text-black text-[10px] font-black rounded-md uppercase tracking-widest">{series.type}</span>
-                <span className="px-3 py-1 bg-white/10 text-white text-[10px] font-black rounded-md uppercase tracking-widest">{series.status}</span>
-              </div>
-              <h1 className="text-4xl sm:text-6xl font-black tracking-tighter leading-[1.2] sm:leading-[1.1]">{series.title}</h1>
-              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-6 text-sm font-bold text-zinc-400">
-                <div className="flex items-center gap-2"><Star className="w-4 h-4 text-yellow-500 fill-current" /> {series.rating.toFixed(1)} ({series.ratingCount})</div>
-                <div className="flex items-center gap-2"><Eye className="w-4 h-4" /> {series.views.toLocaleString()}</div>
-                <div className="flex items-center gap-2"><Clock className="w-4 h-4" /> Updated {formatDistanceToNow(series.lastUpdated.toDate(), { addSuffix: true })}</div>
-              </div>
-              <div className="flex gap-4 mt-2">
-                <button className="flex-1 sm:flex-none px-8 py-3 bg-emerald-500 text-black font-bold rounded-full hover:bg-emerald-400 transition-colors flex items-center justify-center gap-2">
-                  Read First Chapter
-                </button>
-                <button className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-                  <Heart className="w-5 h-5" />
-                </button>
-                <button className="p-3 bg-white/10 rounded-full hover:bg-white/20 transition-colors">
-                  <Share2 className="w-5 h-5" />
-                </button>
-              </div>
+    <div className="min-h-screen bg-zinc-950 text-white pb-20 selection:bg-emerald-500 selection:text-black">
+      <div className="atmosphere" />
+      
+      {/* Immersive Header */}
+      <div className="relative min-h-[70vh] sm:h-[70vh] overflow-hidden">
+        {/* Blurred Background Cover */}
+        <div className="absolute inset-0 z-0">
+          <img
+            src={series.coverImage || undefined}
+            alt=""
+            className="w-full h-full object-cover blur-3xl opacity-30 scale-110"
+            referrerPolicy="no-referrer"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/20 via-zinc-950/60 to-zinc-950" />
+        </div>
+
+        <div className="absolute inset-0 z-10 flex items-center md:items-end pt-24 pb-12 sm:pb-20">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
+            <div className="flex flex-col md:flex-row gap-6 md:gap-12 items-center md:items-end text-center md:text-left">
+              {/* Cover Image Card */}
+              <motion.div
+                initial={{ opacity: 0, y: 40 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8 }}
+                className="relative group shrink-0"
+              >
+                <div className="absolute -inset-1 bg-gradient-to-b from-emerald-500 to-blue-500 rounded-[2rem] blur opacity-25 group-hover:opacity-50 transition duration-1000 group-hover:duration-200" />
+                <div className="relative w-40 sm:w-64 aspect-[2/3] rounded-[2rem] overflow-hidden shadow-2xl border border-white/10">
+                  <img
+                    src={series.coverImage || undefined}
+                    alt={series.title}
+                    className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+              </motion.div>
+
+              {/* Series Info */}
+              <motion.div
+                initial={{ opacity: 0, x: 20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.8, delay: 0.2 }}
+                className="flex-1 space-y-4 md:space-y-6"
+              >
+                <div className="flex flex-wrap justify-center md:justify-start gap-2">
+                  <span className="px-3 py-1 bg-emerald-500 text-black text-[10px] font-black rounded-full uppercase tracking-widest">
+                    {series.type}
+                  </span>
+                  <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-widest border ${
+                    series.status === 'Ongoing' ? 'border-emerald-500/50 text-emerald-500' : 'border-zinc-500/50 text-zinc-500'
+                  }`}>
+                    {series.status}
+                  </span>
+                </div>
+
+                <h1 className="text-3xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-tight md:leading-none text-gradient">
+                  {series.title}
+                </h1>
+
+                <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 md:gap-6 text-zinc-400 text-xs sm:text-sm font-medium">
+                  <div className="flex items-center gap-2">
+                    <User className="w-4 h-4 text-emerald-500" />
+                    <span>{series.author}</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Star className="w-4 h-4 text-emerald-500 fill-current" />
+                    <span className="text-white font-bold">{series.rating.toFixed(1)}</span>
+                    <span className="text-[10px] sm:text-xs opacity-50">({series.ratingCount} reviews)</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-emerald-500" />
+                    <span>{series.releaseYear}</span>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-center md:justify-start gap-2 pt-2">
+                  {series.genres.map(genre => (
+                    <Link key={genre} to={`/search?genre=${genre}`} className="px-3 py-1.5 sm:px-4 sm:py-2 bg-zinc-900/50 border border-white/5 rounded-xl text-[10px] sm:text-xs font-semibold hover:bg-zinc-800 transition-colors cursor-pointer">
+                      {genre}
+                    </Link>
+                  ))}
+                </div>
+              </motion.div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 grid lg:grid-cols-3 gap-12">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-12 grid grid-cols-1 lg:grid-cols-3 gap-12">
+        {/* Main Content */}
         <div className="lg:col-span-2 space-y-12">
-          {/* Synopsis */}
-          <section>
-            <h2 className="text-xl font-black uppercase tracking-tight mb-4">Synopsis</h2>
-            <p className="text-zinc-400 leading-relaxed text-lg">{series.description}</p>
-          </section>
-
-          {/* Genres */}
-          <section>
-            <h2 className="text-xl font-black uppercase tracking-tight mb-4">Genres</h2>
-            <div className="flex flex-wrap gap-2">
-              {series.genres.map(genre => (
-                <Link key={genre} to={`/search?genre=${genre}`} className="px-4 py-2 bg-zinc-900 border border-white/5 rounded-xl text-sm font-bold hover:bg-zinc-800 transition-colors">
-                  {genre}
-                </Link>
-              ))}
-            </div>
-          </section>
+          {/* Action Buttons */}
+          <div className="flex flex-wrap gap-3 sm:gap-4">
+            <button
+              onClick={() => chapters.length > 0 && navigate(`/series/${series.slug}/${chapters[chapters.length - 1].chapterNumber}`)}
+              className="m3-button-primary flex-1 sm:flex-none py-3 sm:py-4 px-6 sm:px-8 text-xs sm:text-sm"
+            >
+              <BookOpen className="w-4 h-4" /> Read First
+            </button>
+            <button className="m3-button-secondary flex-1 sm:flex-none py-3 sm:py-4 px-6 sm:px-8 text-xs sm:text-sm">
+              <Heart className="w-4 h-4" /> Library
+            </button>
+            <button className="p-3 sm:p-4 bg-zinc-900 border border-white/5 rounded-full hover:bg-zinc-800 transition-colors">
+              <Share2 className="w-4 h-4" />
+            </button>
+          </div>
 
           {/* Tabs */}
-          <section>
-            <div className="flex border-b border-white/5 mb-8">
+          <section className="space-y-8">
+            <div className="flex border-b border-white/5">
               <button
                 onClick={() => setActiveTab('chapters')}
                 className={`px-8 py-4 text-sm font-black uppercase tracking-widest transition-colors relative ${activeTab === 'chapters' ? 'text-white' : 'text-zinc-500 hover:text-white'}`}
               >
                 Chapters ({chapters.length})
-                {activeTab === 'chapters' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500" />}
+                {activeTab === 'chapters' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500" />}
               </button>
               <button
                 onClick={() => setActiveTab('comments')}
                 className={`px-8 py-4 text-sm font-black uppercase tracking-widest transition-colors relative ${activeTab === 'comments' ? 'text-white' : 'text-zinc-500 hover:text-white'}`}
               >
                 Comments ({comments.length})
-                {activeTab === 'comments' && <div className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500" />}
+                {activeTab === 'comments' && <motion.div layoutId="activeTab" className="absolute bottom-0 left-0 right-0 h-1 bg-emerald-500" />}
               </button>
             </div>
 
             {activeTab === 'chapters' ? (
-              <div className="grid gap-2">
-                {chapters.map(chapter => (
-                  <Link
+              <div className="space-y-3">
+                {chapters.map((chapter, index) => (
+                  <motion.div
                     key={chapter.id}
-                    to={`/series/${series.slug}/${chapter.chapterNumber}`}
-                    className="flex items-center justify-between p-4 bg-zinc-900/50 border border-white/5 rounded-2xl hover:bg-zinc-900 transition-colors group"
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    onClick={() => navigate(`/series/${series.slug}/${chapter.chapterNumber}`)}
+                    className="group glass-panel p-5 rounded-2xl flex items-center justify-between hover:bg-zinc-800/50 transition-all cursor-pointer border-white/5 hover:border-emerald-500/30"
                   >
-                    <div className="flex items-center gap-4">
-                      <div className="w-10 h-10 bg-zinc-800 rounded-xl flex items-center justify-center font-black text-zinc-500 group-hover:text-emerald-500 transition-colors">
+                    <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-zinc-950 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black text-zinc-500 group-hover:text-emerald-500 transition-colors shrink-0">
                         {chapter.chapterNumber}
                       </div>
-                      <div>
-                        <h4 className="font-bold text-white">Chapter {chapter.chapterNumber}{chapter.title ? `: ${chapter.title}` : ''}</h4>
-                        <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">{formatDistanceToNow(chapter.publishDate.toDate(), { addSuffix: true })}</p>
+                      <div className="min-w-0">
+                        <h3 className="font-bold group-hover:text-emerald-500 transition-colors truncate">
+                          {chapter.title || `Chapter ${chapter.chapterNumber}`}
+                        </h3>
+                        <p className="text-[10px] sm:text-xs text-zinc-500 mt-0.5 sm:mt-1">
+                          {chapter.publishDate instanceof Timestamp ? format(chapter.publishDate.toDate(), 'MMM dd, yyyy') : 'Recently'}
+                        </p>
                       </div>
                     </div>
-                    <Eye className="w-4 h-4 text-zinc-600" />
-                  </Link>
+                    <div className="flex items-center gap-2 sm:gap-4 shrink-0">
+                      <span className="hidden xs:inline text-[10px] font-black uppercase tracking-widest text-zinc-600 group-hover:text-zinc-400 transition-colors">
+                        {chapter.content.length} Pages
+                      </span>
+                      <ChevronRight className="w-5 h-5 text-zinc-700 group-hover:text-emerald-500 transform group-hover:translate-x-1 transition-all" />
+                    </div>
+                  </motion.div>
                 ))}
               </div>
             ) : (
-              <div className="space-y-8">
+              <div className="space-y-6 sm:space-y-8">
                 {/* Comment Form */}
                 {user ? (
-                  <div className="flex gap-4">
-                    <img src={profile?.profilePicture || user.photoURL || ''} className="w-10 h-10 rounded-full" alt="Me" />
-                    <div className="flex-1 space-y-4">
+                  <div className="flex gap-3 sm:gap-4">
+                    <img src={profile?.profilePicture || user.photoURL || undefined} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0" alt="Me" referrerPolicy="no-referrer" />
+                    <div className="flex-1 space-y-3 sm:space-y-4">
                       <textarea
                         placeholder="Write a comment..."
-                        className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-4 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[100px]"
+                        className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-3 sm:p-4 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[100px]"
                       />
                       <button className="px-6 py-2 bg-white text-black font-bold rounded-full text-sm">Post Comment</button>
                     </div>
                   </div>
                 ) : (
-                  <div className="p-8 bg-zinc-900/50 border border-dashed border-white/10 rounded-2xl text-center space-y-4">
-                    <p className="text-zinc-500 font-bold">Please login to join the discussion</p>
+                  <div className="p-6 sm:p-8 bg-zinc-900/50 border border-dashed border-white/10 rounded-2xl text-center space-y-4">
+                    <p className="text-zinc-500 font-bold text-sm sm:text-base">Please login to join the discussion</p>
                     <button 
                       onClick={handleLogin}
                       className="px-8 py-2 bg-white text-black font-bold rounded-full text-sm hover:bg-zinc-200 transition-colors"
@@ -198,19 +254,19 @@ export const SeriesDetail: React.FC = () => {
                 {/* Comment List */}
                 <div className="space-y-6">
                   {comments.map(comment => (
-                    <div key={comment.id} className="flex gap-4">
-                      <img src={comment.userAvatar} className="w-10 h-10 rounded-full" alt={comment.username} />
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <span className="font-bold text-white">{comment.username}</span>
-                          <span className="text-[10px] font-medium text-zinc-500 uppercase tracking-widest">{formatDistanceToNow(comment.timestamp.toDate(), { addSuffix: true })}</span>
+                    <div key={comment.id} className="flex gap-3 sm:gap-4">
+                      <img src={comment.userAvatar || undefined} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0" alt={comment.username} referrerPolicy="no-referrer" />
+                      <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                          <span className="font-bold text-white text-sm sm:text-base">{comment.username}</span>
+                          <span className="text-[9px] sm:text-[10px] font-medium text-zinc-500 uppercase tracking-widest">{formatDistanceToNow(comment.timestamp.toDate(), { addSuffix: true })}</span>
                         </div>
-                        <p className="text-zinc-400 text-sm leading-relaxed">{comment.text}</p>
+                        <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed break-words">{comment.text}</p>
                         <div className="flex items-center gap-4 mt-2">
-                          <button className="text-xs font-bold text-zinc-500 hover:text-white flex items-center gap-1">
+                          <button className="text-[10px] sm:text-xs font-bold text-zinc-500 hover:text-white flex items-center gap-1">
                             <Heart className="w-3 h-3" /> {comment.likes}
                           </button>
-                          <button className="text-xs font-bold text-zinc-500 hover:text-white">Reply</button>
+                          <button className="text-[10px] sm:text-xs font-bold text-zinc-500 hover:text-white">Reply</button>
                         </div>
                       </div>
                     </div>
@@ -219,43 +275,73 @@ export const SeriesDetail: React.FC = () => {
               </div>
             )}
           </section>
+
+          {/* Synopsis */}
+          <section className="space-y-4">
+            <h2 className="text-2xl font-black tracking-tight flex items-center gap-3">
+              <div className="w-1 h-6 bg-emerald-500 rounded-full" />
+              Synopsis
+            </h2>
+            <div className="glass-panel p-8 rounded-[2rem] leading-relaxed text-zinc-300">
+              {series.description}
+            </div>
+          </section>
         </div>
 
         {/* Sidebar */}
-        <aside className="space-y-8">
-          <section className="bg-zinc-900/50 border border-white/5 rounded-3xl p-6 space-y-6">
-            <h3 className="text-lg font-black uppercase tracking-tight">Information</h3>
-            <div className="space-y-4">
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Author</span>
-                <span className="font-bold">{series.author}</span>
+        <div className="space-y-8">
+          <div className="glass-panel p-8 rounded-[2rem] space-y-8">
+            <h3 className="text-lg font-black tracking-tight uppercase tracking-widest text-zinc-500">Details</h3>
+            
+            <div className="space-y-6">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-zinc-500">Artist</span>
+                <span className="text-sm font-bold">{series.artist}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Artist</span>
-                <span className="font-bold">{series.artist}</span>
+              <div className="h-px bg-white/5" />
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-zinc-500">Release</span>
+                <span className="text-sm font-bold">{series.releaseYear}</span>
               </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Released</span>
-                <span className="font-bold">{series.releaseYear}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-zinc-500 font-bold uppercase tracking-widest text-[10px]">Serialization</span>
-                <span className="font-bold">GENZ Original</span>
-              </div>
-            </div>
-          </section>
-
-          <section className="bg-zinc-900/50 border border-white/5 rounded-3xl p-6 space-y-6">
-            <h3 className="text-lg font-black uppercase tracking-tight">Tags</h3>
-            <div className="flex flex-wrap gap-2">
-              {series.tags.map(tag => (
-                <span key={tag} className="px-3 py-1 bg-zinc-800 text-zinc-400 text-[10px] font-bold rounded-lg uppercase tracking-widest">
-                  #{tag}
+              <div className="h-px bg-white/5" />
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-zinc-500">Type</span>
+                <span className="px-2 py-1 bg-zinc-950 rounded-lg text-[10px] font-black uppercase tracking-widest border border-white/5">
+                  {series.type}
                 </span>
-              ))}
+              </div>
             </div>
-          </section>
-        </aside>
+
+            <div className="pt-4">
+              <p className="text-xs font-black uppercase tracking-widest text-zinc-500 mb-4">Tags</p>
+              <div className="flex flex-wrap gap-2">
+                {series.tags.map(tag => (
+                  <span key={tag} className="px-3 py-1 bg-zinc-950 text-zinc-400 rounded-lg text-[10px] font-bold border border-white/5">
+                    #{tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Ad or Promo Space */}
+          <div className="relative aspect-[4/5] rounded-[2rem] overflow-hidden group">
+            <img
+              src="https://picsum.photos/seed/promo/600/800"
+              alt="Promo"
+              className="w-full h-full object-cover opacity-50 group-hover:scale-110 transition-transform duration-1000"
+              referrerPolicy="no-referrer"
+            />
+            <div className="absolute inset-0 bg-gradient-to-t from-emerald-500/80 to-transparent flex flex-col justify-end p-8">
+              <p className="text-black font-black text-2xl tracking-tighter leading-none mb-4">
+                JOIN OUR <br /> DISCORD
+              </p>
+              <button className="w-full py-3 bg-black text-white rounded-xl font-black text-xs uppercase tracking-widest">
+                Join Now
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

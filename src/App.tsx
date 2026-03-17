@@ -1,13 +1,17 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { Navbar } from './components/Navbar';
 import { BottomNav } from './components/BottomNav';
+import { BackToTop } from './components/BackToTop';
 import { Home } from './pages/Home';
 import { SeriesDetail } from './pages/SeriesDetail';
 import { Reader } from './pages/Reader';
 import { Profile } from './pages/Profile';
+import { Library } from './pages/Library';
+import { Novels } from './pages/Novels';
 import { AdminLayout } from './pages/admin/AdminLayout';
 import { AdminDashboard } from './pages/admin/AdminDashboard';
 import { SeriesManagement } from './pages/admin/SeriesManagement';
@@ -20,9 +24,10 @@ import { PageManagement } from './pages/admin/PageManagement';
 export default function App() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <Router>
-          <div className="min-h-screen bg-zinc-950 text-white font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+      <ThemeProvider>
+        <AuthProvider>
+          <Router>
+            <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-emerald-500/30 selection:text-emerald-200 transition-colors duration-300">
             <Routes>
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminLayout />}>
@@ -40,27 +45,33 @@ export default function App() {
               <Route
                 path="*"
                 element={
-                  <>
+                  <div className="relative">
+                    <div className="atmosphere" />
                     <Navbar />
-                    <Routes>
-                      <Route path="/" element={<Home />} />
-                      <Route path="/series/:slug" element={<SeriesDetail />} />
-                      <Route path="/series/:slug/:chapterNum" element={<Reader />} />
-                      <Route path="/profile" element={<Profile />} />
-                      <Route path="/manga" element={<div className="p-20 text-center">Manga List Page</div>} />
-                      <Route path="/manhwa" element={<div className="p-20 text-center">Manhwa List Page</div>} />
-                      <Route path="/novels" element={<div className="p-20 text-center">Novels List Page</div>} />
-                      <Route path="/search" element={<div className="p-20 text-center">Search Results Page</div>} />
-                      <Route path="*" element={<Navigate to="/" replace />} />
-                    </Routes>
+                    <main className="relative z-10">
+                      <Routes>
+                        <Route path="/" element={<Home />} />
+                        <Route path="/series/:slug" element={<SeriesDetail />} />
+                        <Route path="/series/:slug/:chapterNum" element={<Reader />} />
+                        <Route path="/profile" element={<Profile />} />
+                        <Route path="/library" element={<Library />} />
+                        <Route path="/novels" element={<Novels />} />
+                        <Route path="/manga" element={<Library />} />
+                        <Route path="/manhwa" element={<Library />} />
+                        <Route path="/search" element={<Library />} />
+                        <Route path="*" element={<Navigate to="/" replace />} />
+                      </Routes>
+                    </main>
                     <BottomNav />
-                  </>
+                    <BackToTop />
+                  </div>
                 }
               />
             </Routes>
           </div>
         </Router>
       </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

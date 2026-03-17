@@ -1,18 +1,25 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Search, LogIn, User, LayoutDashboard, Menu, X, Bell, LogOut } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Search, LogIn, User, LayoutDashboard, Menu, X, Bell, LogOut, Sun, Moon } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup, signOut } from 'firebase/auth';
 import { motion, AnimatePresence } from 'motion/react';
 
 export const Navbar: React.FC = () => {
   const { user, profile, isAdmin } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const navigate = useNavigate();
+  const location = useLocation();
 
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  // Hide Navbar on Reader page
+  const isReaderPage = location.pathname.split('/').length >= 4 && location.pathname.includes('/series/');
+  if (isReaderPage) return null;
 
   const handleLogin = async () => {
     setLoginError(null);
@@ -39,64 +46,79 @@ export const Navbar: React.FC = () => {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-zinc-950/80 backdrop-blur-md border-b border-white/5">
+    <nav className="fixed top-0 left-0 right-0 z-[100] bg-zinc-950/40 backdrop-blur-2xl border-b border-white/5">
       {loginError && (
-        <div className="bg-red-500 text-white text-xs font-bold py-2 px-4 text-center">
+        <div className="bg-red-500 text-white text-[10px] font-black py-2 px-4 text-center uppercase tracking-widest">
           {loginError}
           <button onClick={() => setLoginError(null)} className="ml-4 underline">Dismiss</button>
         </div>
       )}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center justify-between h-20">
           {/* Logo */}
-          <Link to="/" className="flex items-center gap-2">
-            <span className="text-2xl font-black tracking-tighter text-white">GENZ</span>
-            <span className="hidden sm:block text-xs font-medium text-zinc-500 uppercase tracking-widest">World of Reading</span>
+          <Link to="/" className="flex items-center gap-3 group">
+            <div className="flex flex-col">
+              <span className="text-xl font-black tracking-tighter text-white leading-none">GENZ</span>
+            </div>
           </Link>
 
           {/* Desktop Nav */}
-          <div className="hidden md:flex items-center gap-8">
-            <Link to="/manga" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Manga</Link>
-            <Link to="/manhwa" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Manhwa</Link>
-            <Link to="/novels" className="text-sm font-medium text-zinc-400 hover:text-white transition-colors">Novels</Link>
+          <div className="hidden md:flex items-center gap-10">
+            <Link to="/manga" className="text-[10px] font-black text-zinc-400 hover:text-emerald-500 transition-all uppercase tracking-widest">Manga</Link>
+            <Link to="/manhwa" className="text-[10px] font-black text-zinc-400 hover:text-emerald-500 transition-all uppercase tracking-widest">Manhwa</Link>
+            <Link to="/novels" className="text-[10px] font-black text-zinc-400 hover:text-emerald-500 transition-all uppercase tracking-widest">Novels</Link>
           </div>
 
           {/* Search & User */}
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden md:flex items-center gap-6">
+            <button 
+              onClick={toggleTheme}
+              className="p-3 text-zinc-400 hover:text-emerald-500 hover:bg-white/5 rounded-2xl transition-all"
+              title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
             <form onSubmit={handleSearch} className="relative group">
               <input
                 type="text"
-                placeholder="Search series..."
+                placeholder="Search..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-64 bg-zinc-900/50 border border-white/5 rounded-full py-2 pl-12 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-zinc-900 transition-all"
+                className="w-48 lg:w-64 bg-zinc-900/40 border border-white/5 rounded-2xl py-2.5 pl-12 pr-4 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:bg-zinc-900/80 transition-all placeholder:text-zinc-600"
               />
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500 group-focus-within:text-emerald-500 transition-colors" />
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-600 group-focus-within:text-emerald-500 transition-colors" />
             </form>
 
             {user ? (
-              <div className="flex items-center gap-2">
-                <Link to="/notifications" className="p-2.5 text-zinc-400 hover:text-white hover:bg-white/5 rounded-full transition-all">
-                  <Bell className="w-5 h-5" />
+              <div className="flex items-center gap-4">
+                <Link to="/notifications" className="p-3 text-zinc-400 hover:text-white hover:bg-white/5 rounded-2xl transition-all relative">
+                  <Bell className="w-4 h-4" />
+                  <div className="absolute top-2.5 right-2.5 w-1.5 h-1.5 bg-emerald-500 rounded-full border-2 border-zinc-950" />
                 </Link>
+                
                 {isAdmin && (
-                  <Link to="/admin" className="flex items-center gap-2 px-4 py-2 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-full transition-all" title="Admin Dashboard">
+                  <Link to="/admin" className="p-3 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 rounded-2xl transition-all" title="Admin Dashboard">
                     <LayoutDashboard className="w-4 h-4" />
-                    <span className="text-[10px] font-black uppercase tracking-widest">Admin</span>
                   </Link>
                 )}
-                <Link to="/profile" className="ml-2">
+
+                <div className="h-8 w-px bg-white/5 mx-1" />
+
+                <Link to="/profile" className="relative group">
+                  <div className="absolute -inset-1 bg-gradient-to-tr from-emerald-500 to-blue-500 rounded-full blur opacity-0 group-hover:opacity-40 transition duration-500" />
                   <img
                     src={profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
                     alt="Profile"
-                    className="w-9 h-9 rounded-full border-2 border-white/5 hover:border-emerald-500/50 transition-all"
+                    className="relative w-10 h-10 rounded-full border-2 border-white/10 group-hover:border-emerald-500/50 transition-all object-cover"
+                    referrerPolicy="no-referrer"
                   />
                 </Link>
               </div>
             ) : (
               <button
                 onClick={handleLogin}
-                className="m3-button-primary"
+                className="px-8 py-3 bg-white text-black text-[10px] font-black rounded-2xl hover:scale-105 active:scale-95 transition-all uppercase tracking-widest shadow-xl shadow-white/5"
               >
                 Login
               </button>
@@ -137,7 +159,13 @@ export const Navbar: React.FC = () => {
                 <Link to="/manga" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Manga</Link>
                 <Link to="/manhwa" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Manhwa</Link>
                 <Link to="/novels" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Novels</Link>
-                <Link to="/latest" onClick={() => setIsMenuOpen(false)} className="flex items-center justify-center py-3 bg-zinc-900 rounded-xl text-sm font-bold">Latest</Link>
+                <button 
+                  onClick={() => { toggleTheme(); setIsMenuOpen(false); }} 
+                  className="flex items-center justify-center gap-2 py-3 bg-zinc-900 rounded-xl text-sm font-bold"
+                >
+                  {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+                  {theme === 'dark' ? 'Light' : 'Dark'}
+                </button>
               </div>
 
               {isAdmin && (
@@ -158,6 +186,7 @@ export const Navbar: React.FC = () => {
                       src={profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`}
                       alt="Profile"
                       className="w-10 h-10 rounded-full border border-white/10"
+                      referrerPolicy="no-referrer"
                     />
                     <div>
                       <p className="text-sm font-bold">{profile?.username || user.displayName}</p>

@@ -1,8 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { collection, getDocs, query, orderBy, limit } from 'firebase/firestore';
+import { collection, getDocs, query, orderBy, limit, Timestamp } from 'firebase/firestore';
 import { db } from '../../firebase';
-import { Users, BookOpen, Layers, MessageSquare, TrendingUp, Eye, UserPlus, Star } from 'lucide-react';
+import { Users, BookOpen, Layers, MessageSquare, TrendingUp, Eye, UserPlus, Star, Activity, Shield, Server, Zap } from 'lucide-react';
 import { Series, UserProfile, Comment } from '../../types';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, PieChart, Pie, Cell } from 'recharts';
+
+const MOCK_CHART_DATA = [
+  { name: 'Mon', visitors: 400, views: 2400 },
+  { name: 'Tue', visitors: 300, views: 1398 },
+  { name: 'Wed', visitors: 200, views: 9800 },
+  { name: 'Thu', visitors: 278, views: 3908 },
+  { name: 'Fri', visitors: 189, views: 4800 },
+  { name: 'Sat', visitors: 239, views: 3800 },
+  { name: 'Sun', visitors: 349, views: 4300 },
+];
+
+const COLORS = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b'];
 
 export const AdminDashboard: React.FC = () => {
   const [stats, setStats] = useState({
@@ -69,6 +82,121 @@ export const AdminDashboard: React.FC = () => {
         ))}
       </div>
 
+      {/* Charts Section */}
+      <div className="grid lg:grid-cols-3 gap-8">
+        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-sm space-y-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h3 className="font-black uppercase tracking-tight">Traffic Overview</h3>
+              <p className="text-xs text-zinc-500 font-medium">Visitor statistics for the last 7 days</p>
+            </div>
+            <div className="flex gap-4">
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-emerald-500 rounded-full" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Visitors</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                <span className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Views</span>
+              </div>
+            </div>
+          </div>
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={MOCK_CHART_DATA}>
+                <defs>
+                  <linearGradient id="colorVisitors" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#10b981" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorViews" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f1f1" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#a1a1aa' }}
+                  dy={10}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 10, fontWeight: 700, fill: '#a1a1aa' }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: '#18181b', 
+                    border: 'none', 
+                    borderRadius: '16px',
+                    color: '#fff',
+                    fontSize: '12px',
+                    fontWeight: 'bold'
+                  }}
+                />
+                <Area type="monotone" dataKey="visitors" stroke="#10b981" strokeWidth={3} fillOpacity={1} fill="url(#colorVisitors)" />
+                <Area type="monotone" dataKey="views" stroke="#3b82f6" strokeWidth={3} fillOpacity={1} fill="url(#colorViews)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="bg-zinc-900 p-8 rounded-[2.5rem] shadow-xl border border-white/5 space-y-8">
+          <h3 className="text-white font-black uppercase tracking-tight">System Health</h3>
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-emerald-500/10 text-emerald-500 rounded-xl">
+                  <Server className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-bold">Main Server</p>
+                  <p className="text-emerald-500 text-[10px] font-black uppercase tracking-widest">Operational</p>
+                </div>
+              </div>
+              <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-500/10 text-blue-500 rounded-xl">
+                  <Shield className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-bold">Security Layer</p>
+                  <p className="text-blue-500 text-[10px] font-black uppercase tracking-widest">Active</p>
+                </div>
+              </div>
+              <div className="w-2 h-2 bg-blue-500 rounded-full" />
+            </div>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-purple-500/10 text-purple-500 rounded-xl">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <p className="text-white text-sm font-bold">Scraper Engine</p>
+                  <p className="text-purple-500 text-[10px] font-black uppercase tracking-widest">Ready</p>
+                </div>
+              </div>
+              <div className="w-2 h-2 bg-purple-500 rounded-full" />
+            </div>
+          </div>
+
+          <div className="pt-6 border-t border-white/10">
+            <div className="flex items-center justify-between mb-4">
+              <span className="text-zinc-500 text-[10px] font-black uppercase tracking-widest">Storage Usage</span>
+              <span className="text-white text-[10px] font-black">42%</span>
+            </div>
+            <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+              <div className="h-full bg-emerald-500 w-[42%]" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div className="grid lg:grid-cols-2 gap-8">
         {/* Recent Series */}
         <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
@@ -79,7 +207,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="divide-y divide-zinc-100">
             {recentSeries.map((series) => (
               <div key={series.id} className="p-4 flex items-center gap-4 hover:bg-zinc-50 transition-colors">
-                <img src={series.coverImage} className="w-12 h-16 object-cover rounded-lg" alt="" />
+                <img src={series.coverImage || undefined} className="w-12 h-16 object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
                 <div className="flex-1 min-w-0">
                   <p className="font-bold truncate">{series.title}</p>
                   <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">{series.type} • {series.status}</p>
@@ -105,7 +233,7 @@ export const AdminDashboard: React.FC = () => {
           <div className="divide-y divide-zinc-100">
             {recentUsers.map((user) => (
               <div key={user.uid} className="p-4 flex items-center gap-4 hover:bg-zinc-50 transition-colors">
-                <img src={user.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} className="w-10 h-10 rounded-full" alt="" />
+                <img src={user.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} className="w-10 h-10 rounded-full" alt="" referrerPolicy="no-referrer" />
                 <div className="flex-1">
                   <p className="font-bold">{user.username}</p>
                   <p className="text-xs text-zinc-500 font-medium">{user.email}</p>
