@@ -26,7 +26,7 @@ export const AdminLayout: React.FC = () => {
   const { profile, isAdmin, loading } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() => window.innerWidth >= 1024);
 
   if (loading) {
     return (
@@ -66,6 +66,14 @@ export const AdminLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-zinc-50 flex text-zinc-900">
+      {/* Mobile Sidebar Overlay */}
+      {isSidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-zinc-900 text-white transition-transform duration-300 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'} lg:translate-x-0`}>
         <div className="h-full flex flex-col">
@@ -108,14 +116,14 @@ export const AdminLayout: React.FC = () => {
       </aside>
 
       {/* Main Content */}
-      <main className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'ml-0'}`}>
+      <main className={`flex-1 transition-all duration-300 ${isSidebarOpen ? 'lg:ml-64' : 'ml-0'} w-full min-w-0`}>
         {/* Header */}
-        <header className="sticky top-0 z-40 bg-white border-b border-zinc-200 px-8 py-4 flex items-center justify-between">
+        <header className="sticky top-0 z-30 bg-white border-b border-zinc-200 px-4 sm:px-8 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg">
+            <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-2 text-zinc-500 hover:bg-zinc-100 rounded-lg lg:hidden">
               <Menu className="w-5 h-5" />
             </button>
-            <div className="relative hidden sm:block">
+            <div className="relative hidden md:block">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
               <input 
                 type="text" 
@@ -144,7 +152,7 @@ export const AdminLayout: React.FC = () => {
           </div>
         </header>
 
-        <div className="p-8">
+        <div className="p-4 sm:p-8 overflow-x-hidden">
           <Outlet />
         </div>
       </main>

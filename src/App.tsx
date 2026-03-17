@@ -45,7 +45,7 @@ export default function App() {
               <Route
                 path="*"
                 element={
-                  <div className="relative">
+                  <div className="relative main-app">
                     <div className="atmosphere" />
                     <Navbar />
                     <main className="relative z-10">

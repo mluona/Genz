@@ -68,9 +68,9 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
         {statCards.map((stat) => (
-          <div key={stat.label} className="bg-white p-6 rounded-3xl border border-zinc-200 shadow-sm flex items-center gap-6">
+          <div key={stat.label} className="bg-white p-4 sm:p-6 rounded-3xl border border-zinc-200 shadow-sm flex items-center gap-4 sm:gap-6">
             <div className={`p-4 ${stat.color} text-white rounded-2xl`}>
               <stat.icon className="w-6 h-6" />
             </div>
@@ -83,9 +83,9 @@ export const AdminDashboard: React.FC = () => {
       </div>
 
       {/* Charts Section */}
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-zinc-200 shadow-sm space-y-6">
-          <div className="flex items-center justify-between">
+      <div className="grid lg:grid-cols-3 gap-6 sm:gap-8">
+        <div className="lg:col-span-2 bg-white p-4 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] border border-zinc-200 shadow-sm space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
               <h3 className="font-black uppercase tracking-tight">Traffic Overview</h3>
               <p className="text-xs text-zinc-500 font-medium">Visitor statistics for the last 7 days</p>
@@ -144,7 +144,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
         </div>
 
-        <div className="bg-zinc-900 p-8 rounded-[2.5rem] shadow-xl border border-white/5 space-y-8">
+        <div className="bg-zinc-900 p-4 sm:p-8 rounded-[2rem] sm:rounded-[2.5rem] shadow-xl border border-white/5 space-y-8">
           <h3 className="text-white font-black uppercase tracking-tight">System Health</h3>
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -197,24 +197,26 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid lg:grid-cols-2 gap-8">
+      <div className="grid lg:grid-cols-2 gap-6 sm:gap-8">
         {/* Recent Series */}
         <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
-            <h3 className="font-black uppercase tracking-tight">Recently Updated Series</h3>
-            <button className="text-xs font-bold text-emerald-600 hover:underline">View All</button>
+          <div className="p-4 sm:p-6 border-b border-zinc-100 flex items-center justify-between">
+            <h3 className="font-black uppercase tracking-tight text-sm sm:text-base">Recently Updated Series</h3>
+            <button className="text-xs font-bold text-emerald-600 hover:underline whitespace-nowrap">View All</button>
           </div>
           <div className="divide-y divide-zinc-100">
             {recentSeries.map((series) => (
-              <div key={series.id} className="p-4 flex items-center gap-4 hover:bg-zinc-50 transition-colors">
-                <img src={series.coverImage || undefined} className="w-12 h-16 object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-bold truncate">{series.title}</p>
-                  <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">{series.type} • {series.status}</p>
+              <div key={series.id} className="p-4 flex flex-col sm:flex-row sm:items-center gap-4 hover:bg-zinc-50 transition-colors">
+                <div className="flex items-center gap-4 flex-1 min-w-0">
+                  <img src={series.coverImage || undefined} className="w-12 h-16 object-cover rounded-lg" alt="" referrerPolicy="no-referrer" />
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold truncate">{series.title}</p>
+                    <p className="text-xs text-zinc-500 font-medium uppercase tracking-widest">{series.type} • {series.status}</p>
+                  </div>
                 </div>
-                <div className="text-right">
+                <div className="flex sm:flex-col items-center sm:items-end justify-between sm:justify-center gap-2 sm:gap-0 mt-2 sm:mt-0">
                   <p className="text-xs font-bold">{series.views.toLocaleString()} views</p>
-                  <div className="flex items-center gap-1 text-yellow-500 justify-end">
+                  <div className="flex items-center gap-1 text-yellow-500">
                     <Star className="w-3 h-3 fill-current" />
                     <span className="text-xs font-bold">{series.rating.toFixed(1)}</span>
                   </div>
@@ -226,19 +228,19 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Recent Users */}
         <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-          <div className="p-6 border-b border-zinc-100 flex items-center justify-between">
-            <h3 className="font-black uppercase tracking-tight">New Users</h3>
-            <button className="text-xs font-bold text-emerald-600 hover:underline">View All</button>
+          <div className="p-4 sm:p-6 border-b border-zinc-100 flex items-center justify-between">
+            <h3 className="font-black uppercase tracking-tight text-sm sm:text-base">New Users</h3>
+            <button className="text-xs font-bold text-emerald-600 hover:underline whitespace-nowrap">View All</button>
           </div>
           <div className="divide-y divide-zinc-100">
             {recentUsers.map((user) => (
-              <div key={user.uid} className="p-4 flex items-center gap-4 hover:bg-zinc-50 transition-colors">
+              <div key={user.uid} className="p-4 flex items-center gap-3 sm:gap-4 hover:bg-zinc-50 transition-colors">
                 <img src={user.profilePicture || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`} className="w-10 h-10 rounded-full" alt="" referrerPolicy="no-referrer" />
-                <div className="flex-1">
-                  <p className="font-bold">{user.username}</p>
-                  <p className="text-xs text-zinc-500 font-medium">{user.email}</p>
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold truncate">{user.username}</p>
+                  <p className="text-xs text-zinc-500 font-medium truncate">{user.email}</p>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${user.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-zinc-100 text-zinc-600'}`}>
+                <span className={`px-2 sm:px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest whitespace-nowrap ${user.role === 'admin' ? 'bg-purple-100 text-purple-600' : 'bg-zinc-100 text-zinc-600'}`}>
                   {user.role}
                 </span>
               </div>

@@ -324,23 +324,23 @@ export const ChapterManagement: React.FC = () => {
   return (
     <div className="min-h-screen bg-[#F8F9FA] text-[#1A1A1A]">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-8 py-4">
-        <div className="max-w-[1600px] mx-auto flex items-center justify-between">
-          <div className="flex items-center gap-6">
+      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-zinc-200 px-4 sm:px-8 py-4">
+        <div className="max-w-[1600px] mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
             <div>
-              <h1 className="text-2xl font-black tracking-tight flex items-center gap-2">
-                <Layers className="w-6 h-6 text-emerald-500" />
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2">
+                <Layers className="w-5 h-5 sm:w-6 sm:h-6 text-emerald-500" />
                 Chapter Management
               </h1>
-              <p className="text-xs font-medium text-zinc-500 uppercase tracking-widest">Admin Control Panel</p>
+              <p className="text-[10px] sm:text-xs font-medium text-zinc-500 uppercase tracking-widest">Admin Control Panel</p>
             </div>
             
-            <div className="h-8 w-px bg-zinc-200 mx-2" />
+            <div className="hidden sm:block h-8 w-px bg-zinc-200 mx-2" />
 
-            <div className="flex items-center gap-3">
-              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Active Series</span>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 w-full sm:w-auto">
+              <span className="text-[10px] font-black text-zinc-400 uppercase tracking-widest hidden sm:inline">Active Series</span>
               <select 
-                className="bg-zinc-100 border-none rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none min-w-[240px]"
+                className="bg-zinc-100 border-none rounded-xl px-4 py-2 text-sm font-bold focus:ring-2 focus:ring-emerald-500/20 outline-none w-full sm:min-w-[240px]"
                 value={selectedSeries?.id || ''}
                 onChange={(e) => setSelectedSeries(seriesList.find(s => s.id === e.target.value) || null)}
               >
@@ -352,13 +352,13 @@ export const ChapterManagement: React.FC = () => {
             </div>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 w-full sm:w-auto">
             {selectedSeries && !isEditorOpen && (
               <motion.button 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 onClick={() => openEditor()}
-                className="bg-emerald-500 text-black px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
+                className="w-full sm:w-auto justify-center bg-emerald-500 text-black px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-emerald-400 transition-all shadow-lg shadow-emerald-500/20"
               >
                 <Plus className="w-4 h-4" /> New Chapter
               </motion.button>
@@ -367,7 +367,7 @@ export const ChapterManagement: React.FC = () => {
         </div>
       </header>
 
-      <main className="max-w-[1600px] mx-auto p-8">
+      <main className="max-w-[1600px] mx-auto p-4 sm:p-8">
         <AnimatePresence mode="wait">
           {!selectedSeries ? (
             <motion.div 
@@ -375,12 +375,12 @@ export const ChapterManagement: React.FC = () => {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="flex flex-col items-center justify-center py-32 text-center"
+              className="flex flex-col items-center justify-center py-16 sm:py-32 text-center px-4"
             >
-              <div className="w-24 h-24 bg-zinc-100 rounded-full flex items-center justify-center mb-6">
-                <Layers className="w-10 h-10 text-zinc-300" />
+              <div className="w-20 h-20 sm:w-24 sm:h-24 bg-zinc-100 rounded-full flex items-center justify-center mb-6">
+                <Layers className="w-8 h-8 sm:w-10 sm:h-10 text-zinc-300" />
               </div>
-              <h2 className="text-2xl font-black text-zinc-400">No Series Selected</h2>
+              <h2 className="text-xl sm:text-2xl font-black text-zinc-400">No Series Selected</h2>
               <p className="text-zinc-500 mt-2 max-w-md">Please select a series from the dropdown above to start managing its chapters.</p>
             </motion.div>
           ) : isEditorOpen ? (
@@ -393,9 +393,9 @@ export const ChapterManagement: React.FC = () => {
             >
               {/* Editor Sidebar */}
               <div className="lg:col-span-4 space-y-6">
-                <div className="bg-white p-8 rounded-[2rem] border border-zinc-200 shadow-sm space-y-8">
+                <div className="bg-white p-4 sm:p-8 rounded-[2rem] border border-zinc-200 shadow-sm space-y-6 sm:space-y-8">
                   <div className="flex items-center justify-between">
-                    <h3 className="text-xl font-black uppercase tracking-tight">Chapter Details</h3>
+                    <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight">Chapter Details</h3>
                     <button 
                       onClick={() => setIsEditorOpen(false)}
                       className="p-2 hover:bg-zinc-100 rounded-full transition-colors"
@@ -572,10 +572,10 @@ export const ChapterManagement: React.FC = () => {
                   )}
                 </AnimatePresence>
 
-                <div className="bg-white p-8 rounded-[2rem] border border-zinc-200 shadow-sm min-h-[600px]">
-                  <div className="flex items-center justify-between mb-8">
+                <div className="bg-white p-4 sm:p-8 rounded-[2rem] border border-zinc-200 shadow-sm min-h-[400px] sm:min-h-[600px]">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 sm:mb-8">
                     <div>
-                      <h3 className="text-xl font-black uppercase tracking-tight">
+                      <h3 className="text-lg sm:text-xl font-black uppercase tracking-tight">
                         {selectedSeries.type === 'Novel' ? 'Chapter Content' : 'Chapter Pages'}
                       </h3>
                       <p className="text-xs font-medium text-zinc-500 mt-1">
@@ -743,8 +743,8 @@ export const ChapterManagement: React.FC = () => {
                   <p className="text-zinc-500 font-medium mt-1">Manage {chapters.length} chapters for this series.</p>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  <div className="relative">
+                <div className="flex items-center gap-4 w-full md:w-auto">
+                  <div className="relative w-full">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
                     <input 
                       type="text" 
@@ -763,13 +763,13 @@ export const ChapterManagement: React.FC = () => {
                   <motion.div 
                     layout
                     key={chapter.id}
-                    className="group bg-white p-6 rounded-[2.5rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
+                    className="group bg-white p-4 sm:p-6 rounded-[2rem] sm:rounded-[2.5rem] border border-zinc-200 shadow-sm hover:shadow-xl hover:-translate-y-1 transition-all"
                   >
-                    <div className="flex items-start justify-between mb-6">
-                      <div className="w-14 h-14 bg-zinc-100 rounded-2xl flex items-center justify-center text-xl font-black text-zinc-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-colors">
+                    <div className="flex items-start justify-between mb-4 sm:mb-6">
+                      <div className="w-12 h-12 sm:w-14 sm:h-14 bg-zinc-100 rounded-2xl flex items-center justify-center text-lg sm:text-xl font-black text-zinc-400 group-hover:bg-emerald-50 group-hover:text-emerald-500 transition-colors">
                         #{chapter.chapterNumber}
                       </div>
-                      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
                           onClick={() => openEditor(chapter)}
                           className="p-2 hover:bg-blue-50 text-zinc-400 hover:text-blue-500 rounded-xl transition-all"

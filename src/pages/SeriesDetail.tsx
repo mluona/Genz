@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, orderBy, getDocs, where, Timestamp } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, orderBy, getDocs, where, Timestamp, updateDoc, arrayUnion, arrayRemove, addDoc } from 'firebase/firestore';
 import { auth, googleProvider, db } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 import { Series, Chapter, Comment } from '../types';
@@ -18,7 +18,65 @@ export const SeriesDetail: React.FC = () => {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'chapters' | 'comments'>('chapters');
+  const [isFavorite, setIsFavorite] = useState(false);
 
+  useEffect(() => {
+    if (profile && series) {
+      setIsFavorite(profile.favorites?.includes(series.id) || false);
+    }
+  }, [profile, series]);
+
+  const toggleFavorite = async () => {
+    if (!user || !series) {
+      alert("Please login to add to library");
+      return;
+    }
+    const userRef = doc(db, 'users', user.uid);
+    if (isFavorite) {
+      await updateDoc(userRef, { favorites: arrayRemove(series.id) });
+      setIsFavorite(false);
+    } else {
+      await updateDoc(userRef, { favorites: arrayUnion(series.id) });
+      setIsFavorite(true);
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: series?.title,
+          text: `Check out ${series?.title} on GENZ!`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    }
+  };
+
+  const [newComment, setNewComment] = useState('');
+  const handlePostComment = async () => {
+    if (!user || !series || !newComment.trim()) return;
+    try {
+      await addDoc(collection(db, 'comments'), {
+        seriesId: series.id,
+        userId: user.uid,
+        username: profile?.username || user.displayName || 'Anonymous',
+        userAvatar: profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
+        text: newComment.trim(),
+        timestamp: Timestamp.now(),
+        likes: 0
+      });
+      setNewComment('');
+    } catch (error) {
+      console.error("Error posting comment:", error);
+      alert("Failed to post comment");
+    }
+  };
   const handleLogin = async () => {
     try {
       await signInWithPopup(auth, googleProvider);
@@ -53,7 +111,7 @@ export const SeriesDetail: React.FC = () => {
 
     const commentsQuery = query(collection(db, 'comments'), orderBy('timestamp', 'desc'));
     const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
-      setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)).filter(c => c.seriesId === series.id));
+      setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)).filter(c => c.seriesId === series.id && !c.chapterId));
     });
 
     return () => {
@@ -70,7 +128,7 @@ export const SeriesDetail: React.FC = () => {
       <div className="atmosphere" />
       
       {/* Immersive Header */}
-      <div className="relative min-h-[70vh] sm:h-[70vh] overflow-hidden">
+      <div className="relative min-h-[60vh] lg:min-h-[70vh] flex flex-col justify-end overflow-hidden">
         {/* Blurred Background Cover */}
         <div className="absolute inset-0 z-0">
           <img
@@ -82,7 +140,7 @@ export const SeriesDetail: React.FC = () => {
           <div className="absolute inset-0 bg-gradient-to-b from-zinc-950/20 via-zinc-950/60 to-zinc-950" />
         </div>
 
-        <div className="absolute inset-0 z-10 flex items-center md:items-end pt-24 pb-12 sm:pb-20">
+        <div className="relative z-10 pt-32 pb-12 sm:pb-20">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
             <div className="flex flex-col md:flex-row gap-6 md:gap-12 items-center md:items-end text-center md:text-left">
               {/* Cover Image Card */}
@@ -121,7 +179,7 @@ export const SeriesDetail: React.FC = () => {
                   </span>
                 </div>
 
-                <h1 className="text-3xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-tight md:leading-none text-gradient">
+                <h1 className="text-3xl sm:text-6xl lg:text-7xl font-black tracking-tighter leading-tight md:leading-none text-gradient" dir="auto">
                   {series.title}
                 </h1>
 
@@ -165,10 +223,16 @@ export const SeriesDetail: React.FC = () => {
             >
               <BookOpen className="w-4 h-4" /> Read First
             </button>
-            <button className="m3-button-secondary flex-1 sm:flex-none py-3 sm:py-4 px-6 sm:px-8 text-xs sm:text-sm">
-              <Heart className="w-4 h-4" /> Library
+            <button 
+              onClick={toggleFavorite}
+              className={`flex-1 sm:flex-none py-3 sm:py-4 px-6 sm:px-8 text-xs sm:text-sm transition-all ${isFavorite ? 'bg-emerald-500/20 text-emerald-500 border border-emerald-500/50 rounded-2xl font-black uppercase tracking-widest' : 'm3-button-secondary'}`}
+            >
+              <Heart className={`w-4 h-4 ${isFavorite ? 'fill-current' : ''}`} /> {isFavorite ? 'In Library' : 'Library'}
             </button>
-            <button className="p-3 sm:p-4 bg-zinc-900 border border-white/5 rounded-full hover:bg-zinc-800 transition-colors">
+            <button 
+              onClick={handleShare}
+              className="p-3 sm:p-4 bg-zinc-900 border border-white/5 rounded-full hover:bg-zinc-800 transition-colors"
+            >
               <Share2 className="w-4 h-4" />
             </button>
           </div>
@@ -207,7 +271,7 @@ export const SeriesDetail: React.FC = () => {
                       <div className="w-10 h-10 sm:w-12 sm:h-12 bg-zinc-950 rounded-xl flex items-center justify-center text-xs sm:text-sm font-black text-zinc-500 group-hover:text-emerald-500 transition-colors shrink-0">
                         {chapter.chapterNumber}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0" dir="auto">
                         <h3 className="font-bold group-hover:text-emerald-500 transition-colors truncate">
                           {chapter.title || `Chapter ${chapter.chapterNumber}`}
                         </h3>
@@ -233,10 +297,19 @@ export const SeriesDetail: React.FC = () => {
                     <img src={profile?.profilePicture || user.photoURL || undefined} className="w-8 h-8 sm:w-10 sm:h-10 rounded-full shrink-0" alt="Me" referrerPolicy="no-referrer" />
                     <div className="flex-1 space-y-3 sm:space-y-4">
                       <textarea
+                        value={newComment}
+                        onChange={(e) => setNewComment(e.target.value)}
+                        dir="auto"
                         placeholder="Write a comment..."
                         className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-3 sm:p-4 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[100px]"
                       />
-                      <button className="px-6 py-2 bg-white text-black font-bold rounded-full text-sm">Post Comment</button>
+                      <button 
+                        onClick={handlePostComment}
+                        disabled={!newComment.trim()}
+                        className="px-6 py-2 bg-white text-black font-bold rounded-full text-sm disabled:opacity-50"
+                      >
+                        Post Comment
+                      </button>
                     </div>
                   </div>
                 ) : (
@@ -261,7 +334,7 @@ export const SeriesDetail: React.FC = () => {
                           <span className="font-bold text-white text-sm sm:text-base">{comment.username}</span>
                           <span className="text-[9px] sm:text-[10px] font-medium text-zinc-500 uppercase tracking-widest">{formatDistanceToNow(comment.timestamp.toDate(), { addSuffix: true })}</span>
                         </div>
-                        <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed break-words">{comment.text}</p>
+                        <p className="text-zinc-400 text-xs sm:text-sm leading-relaxed break-words" dir="auto">{comment.text}</p>
                         <div className="flex items-center gap-4 mt-2">
                           <button className="text-[10px] sm:text-xs font-bold text-zinc-500 hover:text-white flex items-center gap-1">
                             <Heart className="w-3 h-3" /> {comment.likes}
@@ -282,7 +355,7 @@ export const SeriesDetail: React.FC = () => {
               <div className="w-1 h-6 bg-emerald-500 rounded-full" />
               Synopsis
             </h2>
-            <div className="glass-panel p-8 rounded-[2rem] leading-relaxed text-zinc-300">
+            <div className="glass-panel p-8 rounded-[2rem] leading-relaxed text-zinc-300" dir="auto">
               {series.description}
             </div>
           </section>

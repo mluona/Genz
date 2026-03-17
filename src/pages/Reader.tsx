@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, Timestamp, orderBy } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, Timestamp, orderBy, addDoc } from 'firebase/firestore';
 import { db } from '../firebase';
-import { Series, Chapter } from '../types';
-import { ChevronLeft, ChevronRight, Settings, Maximize2, List, Moon, Sun, Layout, ArrowUp, Bookmark, BookmarkCheck, Menu, X } from 'lucide-react';
+import { Series, Chapter, Comment } from '../types';
+import { ChevronLeft, ChevronRight, Settings, Maximize2, List, Moon, Sun, Layout, ArrowUp, Bookmark, BookmarkCheck, Menu, X, Share2, MessageSquare, Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
@@ -28,6 +28,56 @@ export const Reader: React.FC = () => {
   const [readingProgress, setReadingProgress] = useState(0);
   const [isBookmarked, setIsBookmarked] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
+  
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [newComment, setNewComment] = useState('');
+  const [showComments, setShowComments] = useState(false);
+
+  useEffect(() => {
+    if (!series || !chapter) return;
+    const commentsQuery = query(collection(db, 'comments'), orderBy('timestamp', 'desc'));
+    const unsubscribeComments = onSnapshot(commentsQuery, (snapshot) => {
+      setComments(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Comment)).filter(c => c.seriesId === series.id && c.chapterId === chapter.id));
+    });
+    return () => unsubscribeComments();
+  }, [series, chapter]);
+
+  const handlePostComment = async () => {
+    if (!user || !series || !chapter || !newComment.trim()) return;
+    try {
+      await addDoc(collection(db, 'comments'), {
+        seriesId: series.id,
+        chapterId: chapter.id,
+        userId: user.uid,
+        username: profile?.username || user.displayName || 'Anonymous',
+        userAvatar: profile?.profilePicture || user.photoURL || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.uid}`,
+        text: newComment.trim(),
+        timestamp: Timestamp.now(),
+        likes: 0
+      });
+      setNewComment('');
+    } catch (error) {
+      console.error("Error posting comment:", error);
+      alert("Failed to post comment");
+    }
+  };
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `${series?.title} - Chapter ${chapter?.chapterNumber}`,
+          text: `Read Chapter ${chapter?.chapterNumber} of ${series?.title} on GENZ!`,
+          url: window.location.href,
+        });
+      } catch (err) {
+        console.error('Error sharing:', err);
+      }
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Link copied to clipboard!');
+    }
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRefs = useRef<(HTMLImageElement | null)[]>([]);
@@ -145,7 +195,7 @@ export const Reader: React.FC = () => {
   return (
     <div 
       ref={containerRef}
-      className={`min-h-screen transition-colors duration-500 ${appTheme === 'dark' ? 'bg-zinc-950 text-white' : 'bg-zinc-50 text-zinc-900'}`}
+      className="min-h-screen transition-colors duration-500 bg-zinc-950 text-white"
     >
       {/* Top Navigation Bar */}
       <motion.div 
@@ -155,7 +205,7 @@ export const Reader: React.FC = () => {
       >
         <div className="absolute bottom-0 left-0 h-0.5 bg-emerald-500 transition-all duration-150" style={{ width: `${readingProgress}%` }} />
         <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 sm:gap-6">
             <button 
               onClick={() => setShowSidebar(true)}
               className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all text-zinc-400 hover:text-white"
@@ -164,16 +214,17 @@ export const Reader: React.FC = () => {
             </button>
             <button 
               onClick={() => navigate(`/series/${series.slug}`)}
-              className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all group hidden sm:block"
+              className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all group"
+              title="Back to Series"
             >
               <ChevronLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform" />
             </button>
             <div className="hidden sm:block">
-              <h1 className="text-sm font-black tracking-tight truncate max-w-xs">{series.title}</h1>
+              <h1 className="text-sm font-black tracking-tight truncate max-w-xs" dir="auto">{series.title}</h1>
               <div className="flex items-center gap-2 mt-0.5">
                 <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500">Chapter {chapter.chapterNumber}</span>
                 <div className="w-1 h-1 bg-zinc-700 rounded-full" />
-                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{chapter.title || 'Untitled'}</span>
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest" dir="auto">{chapter.title || 'Untitled'}</span>
               </div>
             </div>
           </div>
@@ -227,6 +278,27 @@ export const Reader: React.FC = () => {
             )}
 
             <button 
+              onClick={() => setShowComments(true)}
+              className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all text-zinc-400 hover:text-white relative"
+              title="Comments"
+            >
+              <MessageSquare className="w-4 h-4" />
+              {comments.length > 0 && (
+                <div className="absolute -top-1 -right-1 bg-emerald-500 text-black text-[9px] font-black w-4 h-4 rounded-full flex items-center justify-center">
+                  {comments.length > 99 ? '99+' : comments.length}
+                </div>
+              )}
+            </button>
+
+            <button 
+              onClick={handleShare}
+              className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all text-zinc-400 hover:text-white"
+              title="Share Chapter"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
+
+            <button 
               onClick={toggleAppTheme}
               className="p-3 bg-zinc-900 hover:bg-zinc-800 rounded-2xl transition-all text-zinc-400 hover:text-white"
             >
@@ -253,6 +325,7 @@ export const Reader: React.FC = () => {
             <div 
               className="font-serif leading-relaxed whitespace-pre-wrap"
               style={{ fontSize: `${fontSize}px`, lineHeight: lineHeight }}
+              dir="auto"
             >
               {chapter.content[0]}
             </div>
@@ -401,9 +474,10 @@ export const Reader: React.FC = () => {
                 value={chapterNum}
                 onChange={(e) => navigate(`/series/${slug}/${e.target.value}`)}
                 className="w-full bg-zinc-900 border border-white/5 rounded-[1.5rem] px-6 py-4 text-[10px] font-black uppercase tracking-widest focus:outline-none appearance-none cursor-pointer text-center hover:bg-zinc-800 transition-all"
+                dir="auto"
               >
                 {chapters.map(c => (
-                  <option key={c.id} value={c.chapterNumber}>Chapter {c.chapterNumber}</option>
+                  <option key={c.id} value={c.chapterNumber}>Chapter {c.chapterNumber} {c.title ? `- ${c.title}` : ''}</option>
                 ))}
               </select>
               <div className="absolute right-6 top-1/2 -translate-y-1/2 pointer-events-none">
@@ -475,10 +549,89 @@ export const Reader: React.FC = () => {
                         : 'hover:bg-white/5 text-zinc-400 hover:text-white'
                     }`}
                   >
-                    <span>Chapter {c.chapterNumber}</span>
-                    {c.chapterNumber === Number(chapterNum) && <div className="w-2 h-2 rounded-full bg-emerald-500" />}
+                    <span dir="auto">Chapter {c.chapterNumber} {c.title ? `- ${c.title}` : ''}</span>
+                    {c.chapterNumber === Number(chapterNum) && <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 ml-2" />}
                   </button>
                 ))}
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+      {/* Comments Sidebar */}
+      <AnimatePresence>
+        {showComments && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowComments(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+            />
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed top-0 right-0 bottom-0 w-full sm:w-96 bg-zinc-950 border-l border-white/5 z-[70] flex flex-col shadow-2xl"
+            >
+              <div className="p-6 border-b border-white/5 flex items-center justify-between">
+                <h3 className="font-black uppercase tracking-widest text-lg">Comments ({comments.length})</h3>
+                <button 
+                  onClick={() => setShowComments(false)}
+                  className="p-2 hover:bg-white/5 rounded-xl transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-4 space-y-6 custom-scrollbar">
+                {comments.map(comment => (
+                  <div key={comment.id} className="flex gap-3">
+                    <img src={comment.userAvatar || undefined} className="w-8 h-8 rounded-full shrink-0" alt={comment.username} referrerPolicy="no-referrer" />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-2 mb-1">
+                        <span className="font-bold text-white text-sm">{comment.username}</span>
+                      </div>
+                      <p className="text-zinc-400 text-xs leading-relaxed break-words" dir="auto">{comment.text}</p>
+                      <div className="flex items-center gap-4 mt-2">
+                        <button className="text-[10px] font-bold text-zinc-500 hover:text-white flex items-center gap-1">
+                          <Heart className="w-3 h-3" /> {comment.likes}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {comments.length === 0 && (
+                  <div className="text-center text-zinc-500 text-sm py-8">No comments yet. Be the first!</div>
+                )}
+              </div>
+
+              {/* Comment Input */}
+              <div className="p-4 border-t border-white/5 bg-zinc-950">
+                {user ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={newComment}
+                      onChange={(e) => setNewComment(e.target.value)}
+                      dir="auto"
+                      placeholder="Write a comment..."
+                      className="w-full bg-zinc-900 border border-white/10 rounded-2xl p-3 text-sm focus:outline-none focus:border-emerald-500/50 min-h-[80px] resize-none"
+                    />
+                    <button 
+                      onClick={handlePostComment}
+                      disabled={!newComment.trim()}
+                      className="w-full py-2 bg-emerald-500 text-black font-bold rounded-full text-sm disabled:opacity-50 hover:bg-emerald-400 transition-colors"
+                    >
+                      Post Comment
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center space-y-3">
+                    <p className="text-zinc-500 text-sm">Please login to comment</p>
+                  </div>
+                )}
               </div>
             </motion.div>
           </>
