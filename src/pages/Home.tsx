@@ -15,6 +15,7 @@ export const Home: React.FC = () => {
   const [monthlyTop, setMonthlyTop] = useState<Series[]>([]);
   const [popularWorks, setPopularWorks] = useState<Series[]>([]);
   const [loading, setLoading] = useState(true);
+  const [activeTopTab, setActiveTopTab] = useState<'Daily' | 'Weekly' | 'Monthly'>('Daily');
 
   useEffect(() => {
     const recentQuery = query(collection(db, 'series'), orderBy('lastUpdated', 'desc'), limit(10));
@@ -154,28 +155,49 @@ export const Home: React.FC = () => {
           </div>
         </section>
 
-        {/* Top Viewed Grid */}
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-12">
-          {[{ title: 'Daily Top', data: dailyTop, color: 'text-emerald-500' }, 
-            { title: 'Weekly Top', data: weeklyTop, color: 'text-blue-500' }, 
-            { title: 'Monthly Top', data: monthlyTop, color: 'text-purple-500' }].map(section => (
-            <div key={section.title} className="space-y-6 bg-zinc-900/30 p-6 rounded-3xl border border-white/5 hover:border-white/10 transition-colors">
-              <div className="flex items-center gap-3">
-                <TrendingUp className={`w-6 h-6 ${section.color}`} />
-                <h2 className="text-xl font-black uppercase tracking-tight">{section.title}</h2>
-              </div>
-              <div className="space-y-4">
-                {section.data.map((series, i) => (
-                  <div key={series.id} className="flex items-center gap-4 group">
-                    <span className={`text-3xl font-black w-8 transition-colors ${i === 0 ? section.color : 'text-zinc-800 group-hover:text-zinc-600'}`}>
-                      {i + 1}
-                    </span>
-                    <SeriesCard series={series} compact />
-                  </div>
-                ))}
-              </div>
+        {/* Top Viewed */}
+        <section className="bg-zinc-900/30 p-6 sm:p-8 rounded-3xl border border-white/5 hover:border-white/10 transition-colors">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-8">
+            <div className="flex items-center gap-3">
+              <TrendingUp className="w-6 h-6 text-emerald-500" />
+              <h2 className="text-2xl font-black uppercase tracking-tight">Top Viewed</h2>
             </div>
-          ))}
+            
+            {/* Tabs */}
+            <div className="flex items-center gap-2 bg-zinc-950/50 p-1.5 rounded-2xl border border-white/5 overflow-x-auto hide-scrollbar">
+              {(['Daily', 'Weekly', 'Monthly'] as const).map((tab) => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveTopTab(tab)}
+                  className={`px-6 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest whitespace-nowrap transition-all ${
+                    activeTopTab === tab 
+                      ? 'bg-emerald-500 text-black shadow-[0_0_20px_rgba(16,185,129,0.2)]' 
+                      : 'text-zinc-400 hover:text-white hover:bg-white/5'
+                  }`}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {(activeTopTab === 'Daily' ? dailyTop : activeTopTab === 'Weekly' ? weeklyTop : monthlyTop).map((series, i) => (
+              <div key={series.id} className="flex items-center gap-4 group bg-zinc-950/30 p-4 rounded-2xl border border-white/5 hover:border-emerald-500/30 transition-colors">
+                <span className={`text-4xl font-black w-10 text-center transition-colors ${
+                  i === 0 ? 'text-emerald-500' : 
+                  i === 1 ? 'text-blue-500' : 
+                  i === 2 ? 'text-purple-500' : 
+                  'text-zinc-800 group-hover:text-zinc-600'
+                }`}>
+                  {i + 1}
+                </span>
+                <div className="flex-1 min-w-0">
+                  <SeriesCard series={series} compact />
+                </div>
+              </div>
+            ))}
+          </div>
         </section>
 
         {/* Popular Works */}

@@ -27,7 +27,7 @@ export default function App() {
       <ThemeProvider>
         <AuthProvider>
           <Router>
-            <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-emerald-500/30 selection:text-emerald-200 transition-colors duration-300">
+            <div className="min-h-screen overflow-x-hidden bg-zinc-50 dark:bg-zinc-950 text-zinc-900 dark:text-white font-sans selection:bg-emerald-500/30 selection:text-emerald-200 transition-colors duration-300">
             <Routes>
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminLayout />}>
