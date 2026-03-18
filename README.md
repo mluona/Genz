@@ -1,20 +1,150 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
+📚 Genz — Manga Reader Platform
 
-# Run and deploy your AI Studio app
-
-This contains everything you need to run your app locally.
-
-View your app in AI Studio: https://ai.studio/apps/43a47d18-babb-4f72-ab69-79a93ad52a9b
-
-## Run Locally
-
-**Prerequisites:**  Node.js
+Genz هو موقع مفتوح المصدر لقراءة المانجا، مصمم ليكون سريع، بسيط، ومتوافق مع جميع الأجهزة، مع تركيز قوي على تجربة المستخدم والأداء.
 
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+---
+
+🚀 المميزات
+
+📖 قارئ مانجا سريع
+
+تحميل تدريجي للصور (Lazy Loading)
+
+دعم الوضع الأفقي والعمودي
+
+تجربة قراءة سلسة على الهاتف
+
+🤖 استيراد تلقائي
+
+جلب السلاسل والفصول تلقائيًا
+
+دعم مصادر متعددة
+
+نظام ذكي للتعامل مع الحماية مثل Cloudflare
+
+⚡ أداء عالي
+
+تحميل عند الطلب (On-Demand Loading)
+
+تقليل استهلاك البيانات
+
+نظام كاش لتحسين السرعة
+
+🛠️ لوحة تحكم
+
+إدارة السلاسل والفصول
+
+تعديل وحذف بسهولة
+
+واجهة بسيطة وسريعة
+
+📱 متوافق مع جميع الأجهزة
+
+تصميم متجاوب (Responsive)
+
+يعمل بسلاسة على الهواتف
+
+
+---
+
+🧩 التقنيات المستخدمة
+
+Frontend: React / Next.js
+
+Backend: Node.js
+
+Scraping: Puppeteer
+
+Image Handling: Sharp
+
+
+---
+
+📦 التثبيت
+
+git clone https://github.com/your-username/genz.git
+cd genz
+npm install
+npm run dev
+
+
+---
+
+⚙️ الإعداد
+
+أنشئ ملف .env وأضف:
+
+DATABASE_URL=your_database_url
+
+
+---
+
+📱 التوافق
+
+✅ Android
+
+✅ iOS
+
+✅ المتصفحات الحديثة
+
+
+---
+
+🧠 كيف يعمل النظام؟
+
+1. يقوم بجلب بيانات المانجا من المصادر
+
+
+2. يستخرج الفصول والصفحات تلقائيًا
+
+
+3. يخزن البيانات في قاعدة البيانات
+
+
+4. يعرض الصفحات بشكل سريع وتدريجي للمستخدم
+
+
+
+
+---
+
+🤝 المساهمة
+
+نرحب بأي مساهمة!
+
+1. Fork المشروع
+
+
+2. أنشئ فرع جديد
+
+
+3. أضف التعديلات
+
+
+4. أرسل Pull Request
+
+
+
+
+---
+
+⚠️ ملاحظات
+
+المشروع لأغراض تعليمية
+
+يرجى احترام حقوق النشر
+
+
+---
+
+📄 الترخيص
+
+MIT License
+
+
+---
+
+💡 رؤية المشروع
+
+بناء منصة مفتوحة المصدر لقراءة المانجا تركز على السرعة والبساطة وتجربة المستخدم.
