@@ -1,12 +1,107 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { doc, onSnapshot, collection, query, where, getDocs, updateDoc, arrayUnion, arrayRemove, Timestamp, orderBy, addDoc } from 'firebase/firestore';
+import { doc, onSnapshot, collection, query, where, getDocs, getDoc, updateDoc, arrayUnion, arrayRemove, Timestamp, orderBy, addDoc, getCountFromServer } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Series, Chapter, Comment } from '../types';
 import { ChevronLeft, ChevronRight, Settings, Maximize2, List, Moon, Sun, Layout, ArrowUp, Bookmark, BookmarkCheck, Menu, X, Share2, MessageSquare, Heart } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'motion/react';
+
+const LazyPage = ({ seriesId, chapterId, pageIndex, initialSrc, mode = 'vertical', onLoaded }: { seriesId: string, chapterId: string, pageIndex: number, initialSrc: string, mode?: 'vertical' | 'horizontal' | 'preload', onLoaded?: () => void }) => {
+  const [src, setSrc] = useState<string>(initialSrc);
+  const [loading, setLoading] = useState(!initialSrc);
+  const [isVisible, setIsVisible] = useState(mode === 'preload' ? true : false); // Preload immediately
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (initialSrc) {
+      setSrc(initialSrc);
+      setLoading(false);
+      return;
+    }
+
+    if (mode === 'preload') return; // Already visible
+
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '1000px' }); // Load when within 1000px of viewport
+
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+
+    return () => observer.disconnect();
+  }, [initialSrc, mode]);
+
+  useEffect(() => {
+    if (initialSrc || !isVisible) return;
+
+    let isMounted = true;
+    const fetchPage = async () => {
+      try {
+        const pageId = `page_${pageIndex.toString().padStart(4, '0')}`;
+        const pageRef = doc(db, `series/${seriesId}/chapters/${chapterId}/pages`, pageId);
+        const pageSnap = await getDoc(pageRef);
+        
+        if (pageSnap.exists() && isMounted) {
+          setSrc(pageSnap.data().content);
+        }
+      } catch (error) {
+        console.error("Failed to load page", pageIndex, error);
+      } finally {
+        if (isMounted) {
+          setLoading(false);
+          if (onLoaded) onLoaded();
+        }
+      }
+    };
+
+    fetchPage();
+    return () => { isMounted = false; };
+  }, [seriesId, chapterId, pageIndex, initialSrc, isVisible]);
+
+  if (mode === 'preload') {
+    return src ? <img src={src} style={{ display: 'none' }} referrerPolicy="no-referrer" alt="preload next" /> : null;
+  }
+
+  return (
+    <div ref={containerRef} className={`relative flex items-center justify-center bg-zinc-950/50 ${mode === 'horizontal' ? 'w-full h-full' : 'w-full min-h-[50vh]'}`}>
+      {loading && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+      {src && mode === 'horizontal' ? (
+        <motion.img 
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          src={src} 
+          alt={`Page ${pageIndex + 1}`} 
+          className="max-h-full max-w-full object-contain shadow-2xl"
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onLoad={onLoaded}
+        />
+      ) : src ? (
+        <motion.img 
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          src={src} 
+          alt={`Page ${pageIndex + 1}`} 
+          className="w-full h-auto block" 
+          loading="lazy"
+          referrerPolicy="no-referrer"
+          onLoad={onLoaded}
+        />
+      ) : null}
+    </div>
+  );
+};
 
 export const Reader: React.FC = () => {
   const { slug, chapterNum } = useParams<{ slug: string; chapterNum: string }>();
@@ -19,7 +114,7 @@ export const Reader: React.FC = () => {
   const [loading, setLoading] = useState(true);
   
   // Settings
-  const [viewMode, setViewMode] = useState<'vertical' | 'horizontal'>('vertical');
+  const [viewMode, setViewMode] = useState<'vertical' | 'horizontal'>('horizontal');
   const [fontSize, setFontSize] = useState(18);
   const [lineHeight, setLineHeight] = useState(1.8);
   const [currentPage, setCurrentPage] = useState(0);
@@ -80,7 +175,7 @@ export const Reader: React.FC = () => {
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const imageRefs = useRef<(HTMLImageElement | null)[]>([]);
+  const imageRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   // Track current page in vertical mode and reading progress
   useEffect(() => {
@@ -126,10 +221,11 @@ export const Reader: React.FC = () => {
           const chapterData = { id: chapterSnapshot.docs[0].id, ...chapterSnapshot.docs[0].data() } as Chapter;
           
           if (s.type !== 'Novel') {
-            const pagesQuery = query(collection(db, `series/${s.id}/chapters/${chapterData.id}/pages`), orderBy('pageNumber', 'asc'));
-            const pagesSnapshot = await getDocs(pagesQuery);
-            if (!pagesSnapshot.empty) {
-              chapterData.content = pagesSnapshot.docs.map(d => d.data().content);
+            if (!chapterData.content || chapterData.content.length === 0) {
+              const pagesRef = collection(db, `series/${s.id}/chapters/${chapterData.id}/pages`);
+              const snapshot = await getCountFromServer(pagesRef);
+              const count = snapshot.data().count;
+              chapterData.content = Array(count).fill('');
             }
           }
           
@@ -138,13 +234,26 @@ export const Reader: React.FC = () => {
           // Save to history
           if (user) {
             const userRef = doc(db, 'users', user.uid);
-            await updateDoc(userRef, {
-              history: arrayUnion({
+            const userSnap = await getDoc(userRef);
+            if (userSnap.exists()) {
+              const userData = userSnap.data();
+              const currentHistory = userData.history || [];
+              const newHistory = currentHistory.filter((h: any) => h.seriesId !== s.id);
+              
+              newHistory.push({
                 seriesId: s.id,
                 lastChapterId: chapterSnapshot.docs[0].id,
                 timestamp: Timestamp.now()
-              })
-            });
+              });
+              
+              if (newHistory.length > 50) {
+                newHistory.shift();
+              }
+              
+              await updateDoc(userRef, {
+                history: newHistory
+              });
+            }
           }
         }
 
@@ -370,18 +479,15 @@ export const Reader: React.FC = () => {
             </div>
 
             {chapter.content.map((url, i) => (
-              <motion.img 
-                key={i} 
-                ref={el => { imageRefs.current[i] = el; }}
-                initial={{ opacity: 0 }}
-                whileInView={{ opacity: 1 }}
-                viewport={{ once: true }}
-                src={url || undefined} 
-                alt={`Page ${i + 1}`} 
-                className="w-full h-auto block" 
-                loading="lazy"
-                referrerPolicy="no-referrer"
-              />
+              <div key={i} ref={el => { imageRefs.current[i] = el; }}>
+                <LazyPage 
+                  seriesId={series.id}
+                  chapterId={chapter.id}
+                  pageIndex={i}
+                  initialSrc={url || ''}
+                  mode="vertical"
+                />
+              </div>
             ))}
             
             {/* End of Chapter Actions */}
@@ -418,15 +524,24 @@ export const Reader: React.FC = () => {
           </div>
         ) : (
           <div className="relative w-full h-full flex items-center justify-center bg-black">
-            <motion.img 
+            <LazyPage 
               key={currentPage}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              src={chapter.content[currentPage] || undefined} 
-              alt={`Page ${currentPage + 1}`} 
-              className="max-h-full max-w-full object-contain shadow-2xl"
-              referrerPolicy="no-referrer"
+              seriesId={series.id}
+              chapterId={chapter.id}
+              pageIndex={currentPage}
+              initialSrc={chapter.content[currentPage] || ''}
+              mode="horizontal"
             />
+            {/* Preload next image for smoother reading */}
+            {currentPage < chapter.content.length - 1 && (
+              <LazyPage 
+                seriesId={series.id}
+                chapterId={chapter.id}
+                pageIndex={currentPage + 1}
+                initialSrc={chapter.content[currentPage + 1] || ''}
+                mode="preload"
+              />
+            )}
             
             {/* Navigation Overlays */}
             <div 

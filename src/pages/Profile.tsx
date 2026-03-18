@@ -59,11 +59,13 @@ export const Profile: React.FC = () => {
           });
         }
 
-        const favs = (profile.favorites || []).map(id => seriesMap.get(id)).filter(Boolean) as Series[];
+        const uniqueFavorites = Array.from(new Set(profile.favorites || []));
+        const favs = uniqueFavorites.map(id => seriesMap.get(id)).filter(Boolean) as Series[];
         setFavoriteSeries(favs);
 
         const hist = (profile.history || [])
           .sort((a, b) => b.timestamp.toMillis() - a.timestamp.toMillis())
+          .filter((h, index, self) => index === self.findIndex((t) => t.seriesId === h.seriesId))
           .map(h => {
             const s = seriesMap.get(h.seriesId);
             return s ? { ...s, lastChapterId: h.lastChapterId } : null;

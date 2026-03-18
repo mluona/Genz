@@ -1,9 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, addDoc, updateDoc, deleteDoc, doc, Timestamp, query, orderBy, setDoc, getDocs, writeBatch, waitForPendingWrites } from 'firebase/firestore';
 import { db } from '../../firebase';
 import { Series, Chapter } from '../../types';
-import { compressImage } from '../../utils/imageCompression';
+import { compressImage, splitAndCompressImage } from '../../utils/imageCompression';
 import { 
   Plus, Edit2, Trash2, X, Upload, Image as ImageIcon, 
   Layers, Loader2, FileArchive, AlertCircle, ArrowUp, 
@@ -46,6 +46,9 @@ export const ChapterManagement: React.FC = () => {
   const [isExtracting, setIsExtracting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [chapterToDelete, setChapterToDelete] = useState<string | null>(null);
+  const [isClearModalOpen, setIsClearModalOpen] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const zipInputRef = useRef<HTMLInputElement>(null);
@@ -105,16 +108,16 @@ export const ChapterManagement: React.FC = () => {
           type: file.type
         });
         
-        // Compress image to ensure it's under 1MB (0.9MB target)
-        const base64Image = await compressImage(file, 0.9);
+        // Compress and split image if it's a long strip
+        const base64Images = await splitAndCompressImage(file, 0.9);
         
-        console.log(`Successfully compressed: ${file.name}`);
+        console.log(`Successfully compressed and split into ${base64Images.length} parts: ${file.name}`);
         
         setFormData(prev => {
           const newContent = [...prev.content];
           const placeholderIndex = newContent.indexOf(fileId);
           if (placeholderIndex !== -1) {
-            newContent[placeholderIndex] = base64Image;
+            newContent.splice(placeholderIndex, 1, ...base64Images);
           }
           return { ...prev, content: newContent };
         });
@@ -207,42 +210,84 @@ export const ChapterManagement: React.FC = () => {
       
       if (editingChapter) {
         await updateDoc(doc(db, `series/${selectedSeries.id}/chapters`, editingChapter.id), chapterData);
-        setSuccess("Chapter updated successfully!");
       } else {
         const docRef = await addDoc(collection(db, `series/${selectedSeries.id}/chapters`), chapterData);
         chapterId = docRef.id;
         await updateDoc(doc(db, 'series', selectedSeries.id), { lastUpdated: Timestamp.now() });
-        setSuccess("Chapter created successfully!");
       }
       
       // Save pages to subcollection for non-novels
       if (chapterId && !isNovel) {
         const pagesRef = collection(db, `series/${selectedSeries.id}/chapters/${chapterId}/pages`);
         
-        // We use setDoc with a specific ID (like 'page_0', 'page_1') to overwrite existing pages
-        // and allow easy deletion of extra pages if the new chapter has fewer pages.
-        
         // First, let's get existing pages to delete any extras
         const existingPagesSnapshot = await getDocs(pagesRef);
         const existingPageIds = existingPagesSnapshot.docs.map(d => d.id);
         
-        // Save new pages
+        // Save new pages and delete extra pages in batches (max 500 ops or 8MB per batch)
         const newPageIds = new Set<string>();
+        let batch = writeBatch(db);
+        let opCount = 0;
+        let batchSizeBytes = 0;
+        const MAX_BATCH_BYTES = 2 * 1024 * 1024; // 2MB to be safe and prevent stream exhaustion
+        
+        const commitBatchIfNeeded = async (addedBytes = 0) => {
+          if (opCount >= 450 || (batchSizeBytes + addedBytes) >= MAX_BATCH_BYTES) {
+            await batch.commit();
+            try {
+              await waitForPendingWrites(db);
+              await new Promise(resolve => setTimeout(resolve, 500)); // Give client time to breathe
+            } catch (e) {
+              console.warn("waitForPendingWrites failed or timed out", e);
+            }
+            batch = writeBatch(db);
+            opCount = 0;
+            batchSizeBytes = 0;
+          }
+          batchSizeBytes += addedBytes;
+        };
+
         for (let i = 0; i < formData.content.length; i++) {
           const pageId = `page_${i.toString().padStart(4, '0')}`;
           newPageIds.add(pageId);
-          await setDoc(doc(pagesRef, pageId), {
+          
+          const content = formData.content[i];
+          // Approximate size of the document (base64 string length + some overhead)
+          const approxBytes = content ? content.length : 100;
+          
+          await commitBatchIfNeeded(approxBytes);
+          
+          batch.set(doc(pagesRef, pageId), {
             pageNumber: i,
-            content: formData.content[i]
+            content: content
           });
+          opCount++;
         }
         
         // Delete extra pages
         for (const oldId of existingPageIds) {
           if (!newPageIds.has(oldId)) {
-            await deleteDoc(doc(pagesRef, oldId));
+            await commitBatchIfNeeded(100); // Small overhead for delete
+            batch.delete(doc(pagesRef, oldId));
+            opCount++;
           }
         }
+        
+        if (opCount > 0) {
+          await batch.commit();
+          try {
+            await waitForPendingWrites(db);
+            await new Promise(resolve => setTimeout(resolve, 500));
+          } catch (e) {
+            console.warn("waitForPendingWrites failed or timed out", e);
+          }
+        }
+      }
+      
+      if (editingChapter) {
+        setSuccess("Chapter updated successfully!");
+      } else {
+        setSuccess("Chapter created successfully!");
       }
       
       if (shouldContinue) {
@@ -278,14 +323,60 @@ export const ChapterManagement: React.FC = () => {
     setFailedUploads([]);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!selectedSeries || !confirm("Delete this chapter?")) return;
+  const handleDelete = (id: string) => {
+    if (!selectedSeries) return;
+    setChapterToDelete(id);
+    setIsDeleteModalOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedSeries || !chapterToDelete) return;
     try {
-      await deleteDoc(doc(db, `series/${selectedSeries.id}/chapters`, id));
+      // If it's not a novel, delete the pages subcollection first
+      if (selectedSeries.type !== 'Novel') {
+        const pagesRef = collection(db, `series/${selectedSeries.id}/chapters/${chapterToDelete}/pages`);
+        const pagesSnapshot = await getDocs(pagesRef);
+        
+        if (!pagesSnapshot.empty) {
+          let batch = writeBatch(db);
+          let opCount = 0;
+          
+          for (const doc of pagesSnapshot.docs) {
+            batch.delete(doc.ref);
+            opCount++;
+            if (opCount >= 450) {
+              await batch.commit();
+              try {
+                await waitForPendingWrites(db);
+                await new Promise(resolve => setTimeout(resolve, 500));
+              } catch (e) {
+                console.warn("waitForPendingWrites failed or timed out", e);
+              }
+              batch = writeBatch(db);
+              opCount = 0;
+            }
+          }
+          
+          if (opCount > 0) {
+            await batch.commit();
+            try {
+              await waitForPendingWrites(db);
+              await new Promise(resolve => setTimeout(resolve, 500));
+            } catch (e) {
+              console.warn("waitForPendingWrites failed or timed out", e);
+            }
+          }
+        }
+      }
+      
+      // Delete the main chapter document
+      await deleteDoc(doc(db, `series/${selectedSeries.id}/chapters`, chapterToDelete));
       setSuccess("Chapter deleted.");
     } catch (err: any) {
       setError(err.message);
     } finally {
+      setIsDeleteModalOpen(false);
+      setChapterToDelete(null);
       setTimeout(() => setSuccess(null), 3000);
     }
   };
@@ -596,9 +687,7 @@ export const ChapterManagement: React.FC = () => {
                           <RefreshCw className="w-5 h-5" />
                         </button>
                         <button 
-                          onClick={() => {
-                            if (confirm("Clear all pages?")) setFormData(prev => ({ ...prev, content: [] }));
-                          }}
+                          onClick={() => setIsClearModalOpen(true)}
                           className="p-2 hover:bg-red-50 rounded-xl transition-colors text-red-400"
                           title="Clear All"
                         >
@@ -771,14 +860,22 @@ export const ChapterManagement: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-1 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
                         <button 
-                          onClick={() => openEditor(chapter)}
-                          className="p-2 hover:bg-blue-50 text-zinc-400 hover:text-blue-500 rounded-xl transition-all"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            openEditor(chapter);
+                          }}
+                          className="p-2 hover:bg-blue-50 text-zinc-400 hover:text-blue-500 rounded-xl transition-all relative z-10"
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
                         <button 
-                          onClick={() => handleDelete(chapter.id)}
-                          className="p-2 hover:bg-red-50 text-zinc-400 hover:text-red-500 rounded-xl transition-all"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleDelete(chapter.id);
+                          }}
+                          className="p-2 hover:bg-red-50 text-zinc-400 hover:text-red-500 rounded-xl transition-all relative z-10"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -825,6 +922,67 @@ export const ChapterManagement: React.FC = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-8 space-y-6">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black uppercase tracking-tight">Delete Chapter?</h3>
+              <p className="text-zinc-500 font-medium">This action cannot be undone. The chapter and all its pages will be permanently deleted.</p>
+            </div>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setIsDeleteModalOpen(false)}
+                className="flex-1 py-3 bg-zinc-100 text-zinc-500 font-bold rounded-xl hover:bg-zinc-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Clear Pages Confirmation Modal */}
+      {isClearModalOpen && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white w-full max-w-md rounded-[2rem] shadow-2xl p-8 space-y-6">
+            <div className="text-center space-y-4">
+              <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto">
+                <Trash2 className="w-8 h-8" />
+              </div>
+              <h3 className="text-xl font-black uppercase tracking-tight">Clear All Pages?</h3>
+              <p className="text-zinc-500 font-medium">Are you sure you want to remove all pages from this chapter? You will need to re-upload them.</p>
+            </div>
+            <div className="flex gap-4">
+              <button 
+                onClick={() => setIsClearModalOpen(false)}
+                className="flex-1 py-3 bg-zinc-100 text-zinc-500 font-bold rounded-xl hover:bg-zinc-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  setFormData(prev => ({ ...prev, content: [] }));
+                  setIsClearModalOpen(false);
+                }}
+                className="flex-1 py-3 bg-red-500 text-white font-bold rounded-xl hover:bg-red-600 transition-colors"
+              >
+                Clear All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

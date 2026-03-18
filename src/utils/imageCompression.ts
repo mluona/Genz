@@ -64,3 +64,69 @@ export const compressImage = async (file: Blob, maxSizeMB: number = 0.9): Promis
     reader.onerror = (err) => reject(err);
   });
 };
+
+export const splitAndCompressImage = async (file: Blob, maxSizeMB: number = 0.9): Promise<string[]> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target?.result as string;
+      img.onload = () => {
+        const MAX_HEIGHT = 2048; // Max height per slice to maintain quality
+        const slices: string[] = [];
+        
+        let currentY = 0;
+        const totalHeight = img.height;
+        const width = img.width;
+
+        // Scale down width if it's excessively large (e.g., > 1440px)
+        const targetWidth = Math.min(width, 1440);
+        const scale = targetWidth / width;
+        const scaledTotalHeight = Math.round(totalHeight * scale);
+
+        const processSlices = () => {
+          while (currentY < scaledTotalHeight) {
+            const sliceHeight = Math.min(MAX_HEIGHT, scaledTotalHeight - currentY);
+            
+            const canvas = document.createElement('canvas');
+            canvas.width = targetWidth;
+            canvas.height = sliceHeight;
+            const ctx = canvas.getContext('2d');
+            
+            if (!ctx) {
+              reject(new Error('Failed to get canvas context'));
+              return;
+            }
+
+            // Draw the specific slice
+            const sourceY = Math.round(currentY / scale);
+            const sourceHeight = Math.round(sliceHeight / scale);
+            
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, targetWidth, sliceHeight);
+            ctx.drawImage(img, 0, sourceY, width, sourceHeight, 0, 0, targetWidth, sliceHeight);
+
+            // Compress this slice
+            let quality = 0.9;
+            let dataUrl = canvas.toDataURL('image/jpeg', quality);
+            const maxBytes = maxSizeMB * 1024 * 1024;
+            
+            while (Math.round((dataUrl.length * 3) / 4) > maxBytes && quality > 0.1) {
+              quality -= 0.1;
+              dataUrl = canvas.toDataURL('image/jpeg', quality);
+            }
+            
+            slices.push(dataUrl);
+            currentY += sliceHeight;
+          }
+          resolve(slices);
+        };
+        
+        processSlices();
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+};

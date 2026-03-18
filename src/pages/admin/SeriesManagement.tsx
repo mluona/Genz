@@ -155,18 +155,18 @@ export const SeriesManagement: React.FC = () => {
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Series Management</h1>
           <p className="text-zinc-500 font-medium">Add, edit, and manage all reading works on GENZ.</p>
         </div>
-        <div className="flex gap-4">
-          <div className="relative">
+        <div className="flex flex-col sm:flex-row gap-4 w-full md:w-auto">
+          <div className="relative w-full sm:w-auto">
             <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <select 
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value as any)}
-              className="bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-8 text-sm outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20"
+              className="w-full sm:w-auto bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-8 text-sm outline-none appearance-none focus:ring-2 focus:ring-emerald-500/20"
             >
               <option value="all">All Types</option>
               <option value="Manga">Manga</option>
@@ -174,19 +174,19 @@ export const SeriesManagement: React.FC = () => {
               <option value="Novel">Novel</option>
             </select>
           </div>
-          <div className="relative">
+          <div className="relative w-full sm:w-auto">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input 
               type="text" 
               placeholder="Search series..." 
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-4 text-sm w-64 focus:ring-2 focus:ring-emerald-500/20 outline-none"
+              className="w-full sm:w-64 bg-white border border-zinc-200 rounded-2xl py-2.5 pl-10 pr-4 text-sm focus:ring-2 focus:ring-emerald-500/20 outline-none"
             />
           </div>
           <button 
             onClick={() => { setEditingSeries(null); setIsModalOpen(true); }}
-            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors"
+            className="flex items-center justify-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors w-full sm:w-auto"
           >
             <Plus className="w-5 h-5" /> Add New Series
           </button>
@@ -194,8 +194,8 @@ export const SeriesManagement: React.FC = () => {
       </div>
 
       {/* Series Table */}
-      <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
+      <div className="bg-white rounded-3xl border border-zinc-200 shadow-sm overflow-x-auto">
+        <table className="w-full text-left border-collapse min-w-[800px]">
           <thead>
             <tr className="bg-zinc-50 border-b border-zinc-200">
               <th className="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-zinc-500">Series</th>
@@ -254,13 +254,13 @@ export const SeriesManagement: React.FC = () => {
       {isModalOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
           <div className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[2.5rem] shadow-2xl">
-            <div className="p-8 border-b border-zinc-100 flex items-center justify-between sticky top-0 bg-white z-10">
-              <h2 className="text-2xl font-black uppercase tracking-tight">{editingSeries ? 'Edit Series' : 'Add New Series'}</h2>
+            <div className="p-4 sm:p-8 border-b border-zinc-100 flex items-center justify-between sticky top-0 bg-white z-10">
+              <h2 className="text-xl sm:text-2xl font-black uppercase tracking-tight">{editingSeries ? 'Edit Series' : 'Add New Series'}</h2>
               <button onClick={() => setIsModalOpen(false)} className="p-2 text-zinc-400 hover:bg-zinc-100 rounded-full">
                 <X className="w-6 h-6" />
               </button>
             </div>
-            <form onSubmit={handleSubmit} className="p-8 space-y-8">
+            <form onSubmit={handleSubmit} className="p-4 sm:p-8 space-y-8">
               <div className="grid md:grid-cols-2 gap-8">
                 <div className="space-y-6">
                   <div>
@@ -269,7 +269,14 @@ export const SeriesManagement: React.FC = () => {
                       type="text" 
                       required
                       value={formData.title}
-                      onChange={e => setFormData({...formData, title: e.target.value})}
+                      onChange={e => {
+                        const title = e.target.value;
+                        setFormData({
+                          ...formData, 
+                          title,
+                          slug: generateSlug(title)
+                        });
+                      }}
                       className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-3 focus:ring-2 focus:ring-emerald-500/20 outline-none"
                     />
                   </div>
@@ -422,17 +429,17 @@ export const SeriesManagement: React.FC = () => {
                   </div>
                 </div>
               </div>
-              <div className="flex justify-end gap-4 pt-8 border-t border-zinc-100">
+              <div className="flex flex-col-reverse sm:flex-row justify-end gap-3 sm:gap-4 pt-6 sm:pt-8 border-t border-zinc-100">
                 <button 
                   type="button" 
                   onClick={() => setIsModalOpen(false)}
-                  className="px-8 py-3 text-zinc-500 font-bold hover:bg-zinc-100 rounded-2xl transition-colors"
+                  className="w-full sm:w-auto px-8 py-3 text-zinc-500 font-bold hover:bg-zinc-100 rounded-2xl transition-colors"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
-                  className="px-12 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
+                  className="w-full sm:w-auto px-12 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
                 >
                   {editingSeries ? 'Update Series' : 'Create Series'}
                 </button>
