@@ -47,6 +47,52 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.get("/api/proxy-image", async (req, res) => {
+    const { url, referer, cookies } = req.query;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: "Missing url parameter" });
+    }
+
+    if (url.startsWith('data:image/')) {
+      try {
+        const matches = url.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+        if (!matches || matches.length !== 3) {
+          return res.status(400).json({ error: "Invalid base64 image" });
+        }
+        const buffer = Buffer.from(matches[2], 'base64');
+        res.set('Content-Type', `image/${matches[1]}`);
+        res.set('Cache-Control', 'public, max-age=31536000');
+        return res.send(buffer);
+      } catch (error) {
+        return res.status(500).json({ error: "Failed to parse base64 image" });
+      }
+    }
+    
+    try {
+      const headers: any = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Referer': (referer as string) || url,
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+      };
+
+      if (cookies && typeof cookies === 'string') {
+        headers['Cookie'] = cookies;
+      }
+
+      const response = await axios.get(url, {
+        responseType: 'arraybuffer',
+        headers
+      });
+      
+      res.set('Content-Type', response.headers['content-type']);
+      res.set('Cache-Control', 'public, max-age=31536000');
+      res.send(response.data);
+    } catch (error: any) {
+      console.error("Proxy image error:", error.message);
+      res.status(500).json({ error: "Failed to fetch image" });
+    }
+  });
+
   // Proxy for auto-import (example: fetching RSS or scraping)
   app.get("/api/import/rss", async (req, res) => {
     const { url } = req.query;
@@ -93,6 +139,7 @@ async function startServer() {
       });
 
       const page = await browser.newPage();
+      await page.setCacheEnabled(true);
       
       // Set User Agent
       const sanitizedUserAgent = (userAgent as string || 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36')
@@ -152,37 +199,95 @@ async function startServer() {
       }
 
       // Check for Cloudflare challenge
-      const isCloudflare = await page.evaluate(() => {
+      let isCloudflare = await page.evaluate(() => {
         return document.title.includes('Cloudflare') || 
                document.body.innerHTML.includes('checking your browser') ||
-               document.body.innerHTML.includes('DDoS protection');
+               document.body.innerHTML.includes('DDoS protection') ||
+               document.title.includes('Just a moment...');
       });
 
+      let finalPage = page;
+
       if (isCloudflare) {
-        console.log("Cloudflare detected, waiting for challenge to resolve...");
-        // Wait longer for the challenge to resolve automatically if possible
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        console.log("Cloudflare detected on target URL. Opening a new page to the origin to solve it...");
         
-        // Try to click the "I am human" checkbox if it exists (very basic attempt)
+        const originPage = await browser.newPage();
+        await originPage.setCacheEnabled(true);
+        await originPage.setUserAgent(sanitizedUserAgent);
         try {
-          const frames = page.frames();
-          for (const frame of frames) {
-            if (frame.url().includes('cloudflare')) {
-              const checkbox = await frame.$('input[type="checkbox"]');
-              if (checkbox) {
-                await checkbox.click();
-                await new Promise(resolve => setTimeout(resolve, 5000));
-              }
+          const origin = new URL(urlString).origin;
+          await originPage.setExtraHTTPHeaders({
+            'Referer': origin,
+            'Accept-Language': 'en-US,en;q=0.9'
+          });
+          
+          if (cookies) {
+            const cookieList = (cookies as string).split(';').map(pair => {
+              const [name, ...value] = pair.trim().split('=');
+              return { name, value: value.join('='), url: origin };
+            }).filter(c => c.name && c.value);
+            if (cookieList.length > 0) {
+              await originPage.setCookie(...cookieList);
             }
           }
-        } catch (e) {
-          console.log("Failed to interact with Cloudflare checkbox:", e);
+
+          await originPage.goto(origin, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          
+          console.log("Waiting for challenge to resolve on origin page...");
+          await new Promise(resolve => setTimeout(resolve, 12000));
+          
+          // Try to click the "I am human" checkbox if it exists
+          try {
+            const frames = originPage.frames();
+            for (const frame of frames) {
+              if (frame.url().includes('cloudflare')) {
+                const checkbox = await frame.$('input[type="checkbox"]');
+                if (checkbox) {
+                  await checkbox.click();
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+              }
+            }
+          } catch (e) {
+            console.log("Failed to interact with Cloudflare checkbox on origin:", e);
+          }
+          
+          // Wait a bit more
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          
+          // Extract cookies from the solved origin page
+          const solvedCookies = await originPage.cookies();
+          console.log(`Extracted ${solvedCookies.length} cookies from solved page.`);
+          
+          // Apply cookies to a new page with cache enabled
+          console.log("Opening a new page with cookies and cache to load the target URL...");
+          await page.close(); // Close the original page
+          
+          finalPage = await browser.newPage();
+          await finalPage.setCacheEnabled(true);
+          await finalPage.setUserAgent(sanitizedUserAgent);
+          
+          if (solvedCookies.length > 0) {
+            await finalPage.setCookie(...solvedCookies);
+          }
+          
+        } catch (e: any) {
+          console.log("Error solving challenge on origin page:", e.message);
+        } finally {
+          await originPage.close();
+        }
+        
+        // Navigate to the target URL with the new page
+        try {
+          await finalPage.goto(urlString, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        } catch (e: any) {
+          console.log("Error loading target URL on new page:", e.message);
         }
       }
 
       // Wait for network to settle
       try {
-        await page.waitForNetworkIdle({ timeout: 15000 });
+        await finalPage.waitForNetworkIdle({ timeout: 15000 });
       } catch (e) {
         console.log("Network idle timeout, continuing anyway...");
       }
@@ -191,17 +296,68 @@ async function startServer() {
       await new Promise(resolve => setTimeout(resolve, 3000));
 
       // Auto scroll to trigger lazy loading
-      await autoScroll(page);
+      await autoScroll(finalPage);
       
       // Wait another 2s after scroll for images to actually load
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Get HTML content after scrolling
-      const html = await page.content();
+      let html = await finalPage.content();
+      
+      // Get the final cookies to return to the client
+      let finalCookies = await finalPage.cookies();
+      let cookieString = finalCookies.map(c => `${c.name}=${c.value}`).join('; ');
       
       // Check if we are still on a Cloudflare page
-      if (html.includes('cf-browser-verification') || html.includes('cf-challenge-running')) {
-        throw new Error("Failed to bypass Cloudflare protection. Please try providing fresh cookies from your browser.");
+      if (html.includes('cf-browser-verification') || html.includes('cf-challenge-running') || html.includes('Just a moment...')) {
+        console.log("Still on Cloudflare page. Closing old page and opening a new page with cookies and cache...");
+        
+        try {
+          await finalPage.close();
+          const retryPage = await browser.newPage();
+          await retryPage.setUserAgent(sanitizedUserAgent);
+          await retryPage.setCacheEnabled(true);
+          
+          if (finalCookies.length > 0) {
+            await retryPage.setCookie(...finalCookies);
+          }
+          
+          await retryPage.goto(urlString, { waitUntil: 'domcontentloaded', timeout: 30000 });
+          
+          console.log("Waiting for challenge to resolve on retry page...");
+          await new Promise(resolve => setTimeout(resolve, 15000));
+          
+          // Try to click the "I am human" checkbox if it exists
+          try {
+            const frames = retryPage.frames();
+            for (const frame of frames) {
+              if (frame.url().includes('cloudflare')) {
+                const checkbox = await frame.$('input[type="checkbox"]');
+                if (checkbox) {
+                  await checkbox.click();
+                  await new Promise(resolve => setTimeout(resolve, 5000));
+                }
+              }
+            }
+          } catch (e) {
+            console.log("Failed to interact with Cloudflare checkbox on retry page:", e);
+          }
+          
+          await new Promise(resolve => setTimeout(resolve, 10000));
+          await autoScroll(retryPage);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          html = await retryPage.content();
+          finalCookies = await retryPage.cookies();
+          cookieString = finalCookies.map(c => `${c.name}=${c.value}`).join('; ');
+          await retryPage.close();
+        } catch (e) {
+          console.log("Retry page failed:", e);
+        }
+        
+        if (html.includes('cf-browser-verification') || html.includes('cf-challenge-running') || html.includes('Just a moment...')) {
+          throw new Error("Failed to bypass Cloudflare protection. Please try providing fresh cookies from your browser.");
+        }
       }
 
       const $ = cheerio.load(html);
@@ -235,7 +391,7 @@ async function startServer() {
         else if ($('a[href*="manga/"]').length > 8 || $('a[href*="series/"]').length > 8) type = 'list';
       }
 
-      const data: any = { type, url };
+      const data: any = { type, url, cookies: cookieString };
 
       if (type === 'series' || $('h1').length > 0) {
         data.title = $('h1').first().text().trim() || 
@@ -284,6 +440,27 @@ async function startServer() {
           }
         });
         
+        // Fallback: If no chapters found with specific selectors, search all links
+        if (chapters.length === 0) {
+          $('a').each((i, el) => {
+            const href = $(el).attr('href');
+            const text = $(el).text().trim() || $(el).attr('title') || '';
+            if (href && (href.includes('chapter') || href.includes('read') || href.includes('ep-') || /chapter|chap|ep|episode/i.test(href) || /chapter|chap|ep|episode/i.test(text))) {
+              try {
+                const absoluteUrl = new URL(href, url as string).href;
+                // Avoid duplicates and self-links
+                if (!chapters.find(c => c.url === absoluteUrl) && absoluteUrl !== url) {
+                  chapters.push({
+                    title: text || `Chapter ${chapters.length + 1}`,
+                    url: absoluteUrl,
+                    chapterNumber: 0
+                  });
+                }
+              } catch (e) { /* ignore */ }
+            }
+          });
+        }
+
         if (chapters.length > 0) {
           data.type = 'series';
           // Try to extract chapter number from title if possible, otherwise use index
@@ -387,6 +564,37 @@ async function startServer() {
         if (images.length > 0) {
           data.type = 'chapter';
           data.images = [...new Set(images)];
+        } else {
+          // If no images, try to extract text content for novels
+          const textSelectors = [
+            '.chapter-content', '.read-content', '.reading-content', '.entry-content',
+            '#readerarea', '.manga-reading-content', '.text-left', '.novel-content',
+            '#chapter-content', '.cha-words', '.chapter-body', '.epcontent'
+          ];
+          
+          let textContent = '';
+          for (const selector of textSelectors) {
+            const el = $(selector);
+            if (el.length > 0) {
+              // Get HTML to preserve basic formatting like paragraphs and breaks
+              textContent = el.html() || '';
+              break;
+            }
+          }
+          
+          // Fallback: get all paragraphs in the main body if no specific container found
+          if (!textContent) {
+            const paragraphs = $('p').map((i, el) => `<p>${$(el).text()}</p>`).get().join('\n');
+            if (paragraphs.length > 500) { // Arbitrary threshold to ensure it's actual content
+              textContent = paragraphs;
+            }
+          }
+          
+          if (textContent && textContent.length > 200) {
+            data.type = 'chapter';
+            data.content = textContent;
+            console.log(`[Scraper] Found text content for novel chapter (${textContent.length} chars).`);
+          }
         }
       }
 

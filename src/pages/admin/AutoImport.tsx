@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle, X, Edit2 } from 'lucide-react';
-import { collection, onSnapshot, addDoc, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, where, getDocs } from 'firebase/firestore';
+import { Globe, Zap, Search, Plus, Trash2, Play, CheckCircle, AlertCircle, X, Edit2, RefreshCw } from 'lucide-react';
+import { collection, onSnapshot, addDoc, deleteDoc, doc, Timestamp, query, orderBy, updateDoc, where, getDocs, writeBatch } from 'firebase/firestore';
 import { db } from '../../firebase';
 import axios from 'axios';
+import { splitAndCompressImage } from '../../utils/imageCompression';
 
 export const AutoImport: React.FC = () => {
   const [sources, setSources] = useState<any[]>([]);
@@ -140,13 +141,24 @@ export const AutoImport: React.FC = () => {
       let existingChapters: number[] = [];
 
       // Find the source this series belongs to (if any) to get its cookies
-      const source = sources.find(src => seriesData.url.includes(new URL(src.url).hostname));
+      const source = sources.find(src => {
+        try {
+          return seriesData.url && src.url && seriesData.url.includes(new URL(src.url).hostname);
+        } catch (e) {
+          return false;
+        }
+      });
 
       if (!existingSnapshot.empty) {
         const existingDoc = existingSnapshot.docs[0];
         seriesId = existingDoc.id;
         setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Series "${seriesData.title}" already exists. Checking for new chapters...`]);
         
+        // Update sourceUrl if missing
+        if (!existingDoc.data().sourceUrl && seriesData.url) {
+          await updateDoc(doc(db, 'series', seriesId), { sourceUrl: seriesData.url });
+        }
+
         // Get existing chapter numbers
         const chaptersSnap = await getDocs(collection(db, 'series', seriesId, 'chapters'));
         existingChapters = chaptersSnap.docs.map(d => d.data().chapterNumber);
@@ -165,6 +177,7 @@ export const AutoImport: React.FC = () => {
           ratingCount: 1,
           lastUpdated: Timestamp.now(),
           slug,
+          sourceUrl: seriesData.url || '',
           createdAt: Timestamp.now(),
         });
         seriesId = seriesRef.id;
@@ -208,16 +221,83 @@ export const AutoImport: React.FC = () => {
                   throw new Error(errorMsg);
                 }
                 
+                // Update source cookies if we got new ones
+                let currentCookies = source?.cookies || '';
+                if (chData.cookies && chData.cookies !== currentCookies) {
+                   currentCookies = chData.cookies;
+                   if (source) {
+                     await updateDoc(doc(db, 'import_sources', source.id), { cookies: currentCookies });
+                     source.cookies = currentCookies; // update local object
+                   }
+                }
+                
                 if (chData.images && chData.images.length > 0) {
-                  await addDoc(collection(db, 'series', seriesId, 'chapters'), {
+                  const chapRef = await addDoc(collection(db, 'series', seriesId, 'chapters'), {
                     seriesId: seriesId,
                     chapterNumber: chapter.chapterNumber,
                     title: chapter.title,
-                    content: chData.images,
+                    content: [],
                     publishDate: Timestamp.now(),
                     views: 0,
+                    pageCount: chData.images.length,
                   });
-                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Imported ${chapter.title} (${chData.images.length} pages).`]);
+                  
+                  const chapterId = chapRef.id;
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Downloading and compressing ${chData.images.length} pages for ${chapter.title}...`]);
+                  
+                  const pagesRef = collection(db, `series/${seriesId}/chapters/${chapterId}/pages`);
+                  let batch = writeBatch(db);
+                  let opCount = 0;
+                  let batchSizeBytes = 0;
+                  const MAX_BATCH_BYTES = 2 * 1024 * 1024;
+                  
+                  let pageIndex = 0;
+                  for (let i = 0; i < chData.images.length; i++) {
+                    const imgUrl = chData.images[i];
+                    try {
+                      const proxyUrl = `/api/proxy-image?url=${encodeURIComponent(imgUrl)}&referer=${encodeURIComponent(chapter.url)}&cookies=${encodeURIComponent(currentCookies)}`;
+                      const imgResponse = await fetch(proxyUrl);
+                      if (!imgResponse.ok) throw new Error(`Failed to fetch image: ${imgResponse.status}`);
+                      
+                      const blob = await imgResponse.blob();
+                      const file = new File([blob], `page_${i}.jpg`, { type: blob.type });
+                      
+                      const base64Images = await splitAndCompressImage(file, 0.9);
+                      
+                      for (const base64 of base64Images) {
+                        const pageId = `page_${pageIndex.toString().padStart(4, '0')}`;
+                        const approxBytes = base64.length;
+                        
+                        if (opCount >= 450 || (batchSizeBytes + approxBytes) >= MAX_BATCH_BYTES) {
+                          await batch.commit();
+                          batch = writeBatch(db);
+                          opCount = 0;
+                          batchSizeBytes = 0;
+                        }
+                        
+                        batch.set(doc(pagesRef, pageId), {
+                          pageNumber: pageIndex,
+                          content: base64
+                        });
+                        opCount++;
+                        batchSizeBytes += approxBytes;
+                        pageIndex++;
+                      }
+                    } catch (imgErr: any) {
+                      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error processing image ${i + 1}: ${imgErr.message}`]);
+                    }
+                  }
+                  
+                  if (opCount > 0) {
+                    await batch.commit();
+                  }
+                  
+                  // Update page count
+                  await updateDoc(doc(db, `series/${seriesId}/chapters`, chapterId), {
+                    pageCount: pageIndex
+                  });
+
+                  setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Imported ${chapter.title} (${pageIndex} pages).`]);
                   success = true;
                 } else {
                   setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Warning: No images found for ${chapter.title}.`]);
@@ -295,50 +375,116 @@ export const AutoImport: React.FC = () => {
     }
   };
 
+  const handleSyncLibrary = async () => {
+    if (isImporting) return;
+    setIsImporting(true);
+    setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Starting library sync. Checking existing series for updates...`]);
+    
+    try {
+      const seriesSnap = await getDocs(collection(db, 'series'));
+      const seriesList = seriesSnap.docs.map(d => ({ id: d.id, ...d.data() }) as any).filter(s => s.sourceUrl);
+      
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Found ${seriesList.length} series with source URLs.`]);
+      
+      for (const s of seriesList) {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Checking updates for: ${s.title}...`]);
+        const source = sources.find(src => {
+          try {
+            return s.sourceUrl && src.url && s.sourceUrl.includes(new URL(src.url).hostname);
+          } catch (e) {
+            return false;
+          }
+        });
+        
+        try {
+          const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.sourceUrl)}&cookies=${encodeURIComponent(source?.cookies || '')}&userAgent=${encodeURIComponent(source?.userAgent || '')}`);
+          const fullData = await response.json();
+          
+          // Update source cookies if we got new ones
+          if (fullData.cookies && source && fullData.cookies !== source.cookies) {
+             await updateDoc(doc(db, 'import_sources', source.id), { cookies: fullData.cookies });
+             source.cookies = fullData.cookies;
+          }
+          
+          if (fullData && fullData.chapters) {
+            // Temporarily set isImporting to false so handleImportSeries can run, then back to true
+            setIsImporting(false);
+            await handleImportSeries(fullData);
+            setIsImporting(true);
+          }
+        } catch (err: any) {
+          setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error checking ${s.title}: ${err.message}`]);
+        }
+      }
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Library sync complete.`]);
+    } catch (error: any) {
+      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Library sync failed: ${error.message}`]);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
   const handleImportAll = async () => {
-    if (!scrapedData || scrapedData.type !== 'list') return;
+    if (!scrapedData) return;
     
     // Find the source this series belongs to (if any) to get its cookies
-    const source = sources.find(src => scrapedData.url.includes(new URL(src.url).hostname));
-
-    for (const s of scrapedData.series) {
-      setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Deep scraping series details: ${s.title}...`]);
+    const source = sources.find(src => {
       try {
-        const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.url)}&cookies=${encodeURIComponent(source?.cookies || '')}&userAgent=${encodeURIComponent(source?.userAgent || '')}`);
-        const fullData = await response.json();
-        await handleImportSeries(fullData);
-      } catch (error) {
-        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to fetch details for ${s.title}`]);
+        return scrapedData.url && src.url && scrapedData.url.includes(new URL(src.url).hostname);
+      } catch (e) {
+        return false;
       }
+    });
+
+    if (scrapedData.type === 'list') {
+      for (const s of scrapedData.series) {
+        setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Deep scraping series details: ${s.title}...`]);
+        try {
+          const response = await fetch(`/api/scrape/auto?url=${encodeURIComponent(s.url)}&cookies=${encodeURIComponent(source?.cookies || '')}&userAgent=${encodeURIComponent(source?.userAgent || '')}`);
+          const fullData = await response.json();
+          await handleImportSeries(fullData);
+        } catch (error) {
+          setImportLog(prev => [...prev, `[${new Date().toLocaleTimeString()}] Error: Failed to fetch details for ${s.title}`]);
+        }
+      }
+    } else if (scrapedData.type === 'series') {
+      await handleImportSeries(scrapedData);
     }
   };
 
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-black tracking-tight">Auto Import System</h1>
           <p className="text-zinc-500 font-medium">Connect external sources to automatically import new chapters.</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex flex-wrap gap-2 sm:gap-4 w-full sm:w-auto">
           <button 
             onClick={() => setImportLog([])}
-            className="flex items-center gap-2 px-6 py-3 bg-zinc-800 text-white font-bold rounded-2xl hover:bg-zinc-700 transition-colors"
+            className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 sm:px-6 py-3 bg-zinc-800 text-white font-bold rounded-2xl hover:bg-zinc-700 transition-colors text-sm"
           >
             Clear Logs
           </button>
           <button 
+            onClick={handleSyncLibrary}
+            disabled={isImporting}
+            className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 sm:px-6 py-3 bg-blue-500 text-white font-bold rounded-2xl hover:bg-blue-400 transition-colors disabled:opacity-50 text-sm"
+          >
+            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" /> Sync Library
+          </button>
+          <button 
             onClick={handleSyncAll}
             disabled={isImporting}
-            className="flex items-center gap-2 px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors disabled:opacity-50"
+            className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 sm:px-6 py-3 bg-emerald-500 text-black font-bold rounded-2xl hover:bg-emerald-400 transition-colors disabled:opacity-50 text-sm"
           >
-            <Zap className="w-5 h-5" /> Sync All Sources
+            <Zap className="w-4 h-4 sm:w-5 sm:h-5" /> Sync All
           </button>
           <button 
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors"
+            className="flex-1 sm:flex-none flex justify-center items-center gap-2 px-4 sm:px-6 py-3 bg-black text-white font-bold rounded-2xl hover:bg-zinc-800 transition-colors text-sm"
           >
-            <Plus className="w-5 h-5" /> Add New Source
+            <Plus className="w-4 h-4 sm:w-5 sm:h-5" /> Add Source
           </button>
         </div>
       </div>
@@ -352,24 +498,24 @@ export const AutoImport: React.FC = () => {
             </div>
             <div className="divide-y divide-zinc-100">
               {sources.map((source) => (
-                <div key={source.id} className="p-6 flex items-center justify-between hover:bg-zinc-50 transition-colors">
+                <div key={source.id} className="p-4 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between hover:bg-zinc-50 transition-colors gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="p-3 bg-zinc-100 rounded-2xl text-zinc-500">
+                    <div className="p-3 bg-zinc-100 rounded-2xl text-zinc-500 shrink-0">
                       <Globe className="w-6 h-6" />
                     </div>
-                    <div>
-                      <p className="font-bold">{source.name}</p>
-                      <p className="text-xs text-zinc-500 font-medium">{source.url}</p>
+                    <div className="min-w-0">
+                      <p className="font-bold truncate">{source.name}</p>
+                      <p className="text-xs text-zinc-500 font-medium truncate">{source.url}</p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-8">
-                    <div className="text-right">
+                  <div className="flex items-center justify-between sm:justify-end gap-4 sm:gap-8 w-full sm:w-auto">
+                    <div className="text-left sm:text-right">
                       <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${source.status === 'Active' ? 'bg-emerald-100 text-emerald-600' : 'bg-zinc-100 text-zinc-600'}`}>
                         {source.status}
                       </span>
                       <p className="text-[10px] font-bold text-zinc-400 mt-1 uppercase tracking-widest">Last sync: {source.lastSync}</p>
                     </div>
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1 sm:gap-2 shrink-0">
                       <button 
                         onClick={() => handleTestConnection(source)}
                         disabled={isTesting === source.id || isImporting}
